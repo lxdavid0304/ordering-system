@@ -1,0 +1,78 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>會員資料</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+    <main class="page order-page">
+      <header class="hero">
+        <div class="hero-topbar">
+          <h1>會員資料</h1>
+          <nav class="quick-access page-nav" aria-label="會員功能">
+            <a class="quick-tab" href="order.html">填單</a>
+            <a class="quick-tab" href="history.html">歷史訂單</a>
+            <a class="quick-tab active" href="profile.html">會員資料</a>
+            <button type="button" class="quick-tab" id="globalLogoutBtn">登出</button>
+          </nav>
+        </div>
+      </header>
+
+      <section class="card profile-card" id="profileCard">
+        <div class="panel-header">
+          <div>
+            <h2>個人資料</h2>
+            <p class="muted">可編輯姓名、會員帳號、手機號碼與郵箱。</p>
+          </div>
+          <div class="actions profile-actions">
+            <button type="button" class="ghost" id="editProfileBtn">編輯資料</button>
+            <button type="button" class="ghost hidden" id="cancelEditProfileBtn">取消</button>
+            <a class="ghost profile-link-btn" href="change-password.html">修改密碼</a>
+          </div>
+        </div>
+
+        <form id="profileForm" class="stack">
+          <div class="member-profile-card profile-editable">
+            <label class="member-profile-row">
+              <span class="member-profile-label">姓名</span>
+              <input class="profile-input" type="text" id="profileFullName" required readonly />
+            </label>
+            <label class="member-profile-row">
+              <span class="member-profile-label">會員帳號</span>
+              <input
+                class="profile-input"
+                type="text"
+                id="profileAccount"
+                minlength="6"
+                maxlength="30"
+                required
+                readonly
+              />
+            </label>
+            <label class="member-profile-row">
+              <span class="member-profile-label">手機號碼</span>
+              <input class="profile-input" type="tel" id="profileMobile" required readonly />
+            </label>
+            <label class="member-profile-row">
+              <span class="member-profile-label">郵箱</span>
+              <input class="profile-input" type="email" id="profileEmail" required readonly />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="primary hidden" id="saveProfileBtn">儲存變更</button>
+          </div>
+          <p class="form-message" id="profileMessage"></p>
+        </form>
+      </section>
+    </main>
+
+    <script src="assets/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="assets/shared.js"></script>
+    <script src="assets/profile.js"></script>
+  </body>
+</html>

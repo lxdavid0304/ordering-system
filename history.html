@@ -1,0 +1,56 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>歷史訂單</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+    <main class="page order-page">
+      <header class="hero">
+        <div class="hero-topbar">
+          <h1>歷史訂單</h1>
+          <nav class="quick-access page-nav" aria-label="會員功能">
+            <a class="quick-tab" href="order.html">填單</a>
+            <a class="quick-tab active" href="history.html">歷史訂單</a>
+            <a class="quick-tab" href="profile.html">會員資料</a>
+            <button type="button" class="quick-tab" id="globalLogoutBtn">登出</button>
+          </nav>
+        </div>
+      </header>
+
+      <section class="card history-card" id="historyCard">
+        <div class="panel-header">
+          <div>
+            <h2>我的訂單</h2>
+            <p class="muted" id="memberOrdersUpdated">最後更新：--</p>
+          </div>
+          <div class="actions">
+            <button type="button" class="ghost" id="refreshHistoryBtn">重新整理</button>
+          </div>
+        </div>
+
+        <div class="panel-header compact-header">
+          <label class="field history-filter-field" id="memberOrderFilterField">
+            <span>顯示範圍</span>
+            <select id="memberOrderFilter">
+              <option value="history" selected>歷史</option>
+              <option value="current">進行中</option>
+              <option value="all">全部</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="memberOrdersContainer" class="member-orders"></div>
+        <p class="form-message" id="memberOrdersMessage"></p>
+      </section>
+    </main>
+
+    <script src="assets/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="assets/shared.js"></script>
+    <script src="assets/history.js"></script>
+  </body>
+</html>

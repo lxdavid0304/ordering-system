@@ -1,0 +1,102 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>訂購單</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+    <main class="page order-page">
+      <header class="hero">
+        <div class="hero-topbar">
+          <h1>訂購單</h1>
+          <nav class="quick-access page-nav" aria-label="會員功能">
+            <a class="quick-tab active" href="order.html">填單</a>
+            <a class="quick-tab" href="history.html">歷史訂單</a>
+            <a class="quick-tab" href="profile.html">會員資料</a>
+            <button type="button" class="quick-tab" id="globalLogoutBtn">登出</button>
+          </nav>
+        </div>
+      </header>
+
+      <div class="order-workspace">
+        <section class="card workspace-form" id="orderFormCard">
+          <form id="orderForm">
+            <p class="form-message error" id="orderLockMessage">正在驗證會員資料...</p>
+
+            <div class="status-card compact form-schedule-card" id="scheduleCard">
+              <div class="status-left">
+                <span class="status-label">目前狀態</span>
+                <span class="status-badge" id="openBadge">載入中</span>
+              </div>
+              <div class="status-right">
+                <div class="status-title">開放時段</div>
+                <div class="status-detail" id="scheduleInfo">載入中...</div>
+                <div class="status-note">關閉時間視為該小時 59 分。</div>
+              </div>
+            </div>
+
+            <div class="grid">
+              <label class="field">
+                <span>運送地址</span>
+                <select id="deliveryLocation" required>
+                  <option value="">請選擇</option>
+                  <option value="明德樓">明德樓</option>
+                  <option value="據德樓">據德樓</option>
+                  <option value="蘊德樓">蘊德樓</option>
+                  <option value="機車停車場">機車停車場</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="section-title">
+              <h2>商品清單</h2>
+              <button type="button" class="ghost" id="addItemBtn">+ 新增商品</button>
+            </div>
+            <div class="item-header">
+              <span>商品名稱</span>
+              <span>單價</span>
+              <span>數量</span>
+              <span>小計</span>
+              <span></span>
+            </div>
+            <div id="itemList" class="item-list"></div>
+
+            <label class="field full">
+              <span>備註</span>
+              <textarea id="note" rows="3" placeholder="例如：無辣、請放門口"></textarea>
+            </label>
+
+            <div class="total-row">
+              <div>
+                <span class="total-label">總金額</span>
+                <span class="total-amount" id="grandTotal">0</span>
+              </div>
+              <button type="submit" class="primary" id="submitBtn">送出訂單</button>
+            </div>
+            <p class="form-message" id="formMessage"></p>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <template id="itemRowTemplate">
+      <div class="item-row">
+        <input type="text" class="item-name" placeholder="商品名稱" required />
+        <div class="item-price-wrap">
+          <input type="number" class="item-price" min="0" step="1" value="0" required />
+        </div>
+        <input type="number" class="item-qty" min="1" step="1" value="1" required />
+        <div class="item-line-total">0</div>
+        <button type="button" class="icon" title="刪除">✕</button>
+      </div>
+    </template>
+
+    <script src="assets/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="assets/shared.js"></script>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

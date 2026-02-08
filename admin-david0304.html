@@ -1,0 +1,146 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>訂購後台</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">管理後台</p>
+        <h1>訂購系統後台</h1>
+        <p class="subtitle">請先登入後即可查看訂單與設定開放時段。</p>
+      </header>
+
+      <section class="card" id="loginCard">
+        <form id="loginForm" class="stack">
+          <label class="field">
+            <span>管理員 Email</span>
+            <input type="email" id="adminEmail" placeholder="admin@example.com" required />
+          </label>
+          <label class="field">
+            <span>管理員密碼</span>
+            <input type="password" id="adminPassword" required />
+          </label>
+          <button type="submit" class="primary">Email 登入</button>
+          <button type="button" class="ghost" id="githubLoginBtn">GitHub 登入</button>
+          <p class="form-message" id="loginMessage"></p>
+        </form>
+      </section>
+
+      <section class="card hidden" id="adminPanel">
+        <div class="panel-header">
+          <div>
+            <h2>開放時間設定</h2>
+            <p class="muted">關閉時間會視為該小時的 59 分。</p>
+          </div>
+          <button type="button" class="ghost" id="logoutBtn">登出</button>
+        </div>
+        <div class="grid schedule-grid">
+          <label class="field checkbox-field">
+            <span>永遠開放</span>
+            <input type="checkbox" id="alwaysOpen" />
+          </label>
+          <label class="field">
+            <span>開放星期</span>
+            <select id="openDay"></select>
+          </label>
+          <label class="field">
+            <span>開放時間</span>
+            <select id="openHour"></select>
+          </label>
+          <label class="field">
+            <span>關閉星期</span>
+            <select id="closeDay"></select>
+          </label>
+          <label class="field">
+            <span>關閉時間</span>
+            <select id="closeHour"></select>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" id="saveScheduleBtn">儲存設定</button>
+          <span class="muted" id="scheduleSaved"></span>
+        </div>
+      </section>
+
+      <section class="card hidden" id="ordersPanel">
+        <div class="panel-header">
+          <div>
+            <h2>訂單清單</h2>
+            <p class="muted" id="lastUpdated">最後更新：--</p>
+          </div>
+          <div class="actions">
+            <button type="button" class="ghost" id="refreshBtn">重新整理</button>
+          </div>
+        </div>
+        <div class="order-filters">
+          <label class="field">
+            <span>狀態</span>
+            <select id="statusFilter">
+              <option value="open" selected>未完成</option>
+              <option value="fulfilled">已完成</option>
+              <option value="archived">歷史紀錄</option>
+              <option value="all">全部</option>
+            </select>
+          </label>
+          <label class="field time-field">
+            <span>時間</span>
+            <div class="time-selects">
+              <select id="yearFilter">
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+              </select>
+              <select id="monthFilter">
+                <option value="1">1月</option>
+                <option value="2">2月</option>
+                <option value="3">3月</option>
+                <option value="4">4月</option>
+                <option value="5">5月</option>
+                <option value="6">6月</option>
+                <option value="7">7月</option>
+                <option value="8">8月</option>
+                <option value="9">9月</option>
+                <option value="10">10月</option>
+                <option value="11">11月</option>
+                <option value="12">12月</option>
+              </select>
+            </div>
+          </label>
+        </div>
+        <div class="bulk-actions">
+          <label class="checkbox-inline">
+            <input type="checkbox" id="selectAllOrders" />
+            全選本頁
+          </label>
+          <span class="muted" id="selectedCount">已選 0 筆</span>
+          <label class="field bulk-field">
+            <span>批次操作</span>
+            <select id="bulkStatus">
+              <option value="">選擇狀態</option>
+              <option value="open">未完成</option>
+              <option value="fulfilled">已完成</option>
+              <option value="archived">歷史紀錄</option>
+            </select>
+          </label>
+          <button type="button" class="ghost" id="bulkApplyBtn">套用</button>
+          <span class="muted" id="bulkMessage"></span>
+        </div>
+        <div id="ordersContainer" class="orders"></div>
+        <div class="pagination-controls">
+          <button type="button" class="ghost" id="prevPageBtn">上一頁</button>
+          <span class="muted" id="pageInfo">第 1 / 1 頁（共 0 筆）</span>
+          <button type="button" class="ghost" id="nextPageBtn">下一頁</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="assets/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="assets/shared.js"></script>
+    <script src="assets/admin.js"></script>
+  </body>
+</html>

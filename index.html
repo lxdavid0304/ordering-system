@@ -1,0 +1,95 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>會員登入與註冊</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+    <main class="page">
+      <header class="hero">
+        <h1>會員登入與註冊</h1>
+        <p class="subtitle">請先完成註冊，再用帳號或 Email 與密碼登入後進入填單頁面。</p>
+      </header>
+
+      <section class="card member-card" id="memberCard">
+        <div class="panel-header">
+          <div>
+            <h2>會員中心</h2>
+            <p class="muted">登入成功後才可進入填單系統。</p>
+          </div>
+          <span class="status-badge" id="memberStatus">尚未登入</span>
+        </div>
+
+        <div id="authPanel">
+          <div class="tab-group">
+            <button type="button" class="tab active" data-tab="login">登入</button>
+            <button type="button" class="tab" data-tab="register">註冊</button>
+          </div>
+          <div class="auth-panels">
+            <form id="memberLoginForm" class="stack auth-form" data-panel="login">
+              <label class="field">
+                <span>帳號 / Email</span>
+                <input
+                  type="text"
+                  id="loginAccount"
+                  placeholder="請輸入帳號或 Email"
+                  required
+                />
+              </label>
+              <label class="field">
+                <span>密碼</span>
+                <input type="password" id="loginPassword" required />
+              </label>
+              <button type="submit" class="primary">登入</button>
+              <p class="form-message" id="loginFormMessage"></p>
+            </form>
+
+            <form id="memberRegisterForm" class="stack auth-form hidden" data-panel="register">
+              <label class="field">
+                <span>姓名</span>
+                <input type="text" id="registerFullName" placeholder="王小明" required />
+              </label>
+              <label class="field">
+                <span>帳號</span>
+                <input
+                  type="text"
+                  id="registerAccount"
+                  placeholder="6-30 字元，英文或數字"
+                  minlength="6"
+                  maxlength="30"
+                  required
+                />
+              </label>
+              <label class="field">
+                <span>真實電話</span>
+                <input type="tel" id="registerPhone" placeholder="09xxxxxxxx" required />
+              </label>
+              <label class="field">
+                <span>Email</span>
+                <input type="email" id="registerEmail" placeholder="you@example.com" required />
+              </label>
+              <label class="field">
+                <span>密碼</span>
+                <input type="password" id="registerPassword" minlength="6" required />
+              </label>
+              <label class="field">
+                <span>確認密碼</span>
+                <input type="password" id="registerPasswordConfirm" minlength="6" required />
+              </label>
+              <button type="submit" class="primary">註冊</button>
+              <p class="form-message" id="registerFormMessage"></p>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="assets/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="assets/shared.js"></script>
+    <script src="assets/auth.js"></script>
+  </body>
+</html>
