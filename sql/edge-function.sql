@@ -230,6 +230,23 @@ drop function if exists public.create_order(
   text,
   uuid
 );
+drop function if exists public.create_order(
+  text,
+  text,
+  text,
+  text,
+  jsonb,
+  text
+);
+drop function if exists public.create_order(
+  text,
+  text,
+  text,
+  text,
+  jsonb,
+  text,
+  text
+);
 
 create or replace function public.create_order(
   p_delivery_location text,
