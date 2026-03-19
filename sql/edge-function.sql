@@ -267,6 +267,8 @@ declare
   v_name text;
   v_unit_price int;
   v_quantity int;
+  v_items_total int := 0;
+  v_shipping_total int := 0;
   v_total int := 0;
   v_customer_name text;
   v_phone text;
@@ -337,7 +339,8 @@ begin
       raise exception 'Invalid item';
     end if;
 
-    v_total := v_total + (v_unit_price * v_quantity);
+    v_items_total := v_items_total + (v_unit_price * v_quantity);
+    v_shipping_total := v_shipping_total + (v_quantity * 20);
 
     insert into public.order_items (
       order_id,
@@ -355,12 +358,18 @@ begin
     );
   end loop;
 
-  if v_total = 0 then
+  if v_items_total = 0 then
     raise exception 'Items required';
   end if;
 
+  v_total := v_items_total + v_shipping_total;
+
   update public.orders
     set total_amount = v_total
+      , status = case
+          when v_total > 300 then 'pending_deposit'
+          else 'open'
+        end
     where id = v_order_id;
 
   return v_order_id;

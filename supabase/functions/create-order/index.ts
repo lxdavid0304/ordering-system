@@ -8,8 +8,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const RATE_LIMIT_MS = 2 * 60 * 1000;
-
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -182,48 +180,6 @@ serve(async (req) => {
 
   if (cleanedItems.length === 0) {
     return jsonResponse({ error: "Items required" }, 400);
-  }
-
-  const ip = getClientIp(req);
-  const now = new Date();
-  const rateKey = `${ip}|${deviceId}|${profile.real_phone}|${userId}`;
-
-  const { data: rateRow, error: rateError } = await supabase
-    .from("rate_limits")
-    .select("last_request")
-    .eq("key", rateKey)
-    .maybeSingle();
-
-  if (rateError) {
-    return jsonResponse({ error: "Rate limit check failed" }, 500);
-  }
-
-  if (rateRow?.last_request) {
-    const lastRequest = new Date(rateRow.last_request);
-    const diffMs = now.getTime() - lastRequest.getTime();
-    if (diffMs < RATE_LIMIT_MS) {
-      const retryAfter = Math.ceil((RATE_LIMIT_MS - diffMs) / 1000);
-      return jsonResponse(
-        {
-          error: "Too many requests. Please wait before trying again.",
-          retry_after: retryAfter,
-        },
-        429
-      );
-    }
-  }
-
-  const { error: rateUpdateError } = await supabase.from("rate_limits").upsert({
-    key: rateKey,
-    ip,
-    device_id: deviceId,
-    phone: profile.real_phone,
-    user_id: userId,
-    last_request: now.toISOString(),
-  });
-
-  if (rateUpdateError) {
-    return jsonResponse({ error: "Rate limit update failed" }, 500);
   }
 
   const { data: openNow, error: openError } = await supabase.rpc("ordering_open_now");
