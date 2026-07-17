@@ -1,101 +1,94 @@
 import { adminSupabase } from "../lib/supabase";
 
-function getTimeZoneOffsetMinutes(date, timeZone) {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
-  const parts = formatter.formatToParts(date);
-  const lookup = {};
-
-  for (const part of parts) {
-    lookup[part.type] = part.value;
-  }
-
-  const asUtc = Date.UTC(
-    Number(lookup.year),
-    Number(lookup.month) - 1,
-    Number(lookup.day),
-    Number(lookup.hour),
-    Number(lookup.minute),
-    Number(lookup.second)
-  );
-
-  return (asUtc - date.getTime()) / 60000;
+function missingClient(extra = {}) {
+  return { data: null, error: new Error("請先設定 config.js"), ...extra };
 }
 
-function getUtcDateForTimeZoneLocal(year, month, day, timeZone) {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  const offsetMinutes = getTimeZoneOffsetMinutes(utcGuess, timeZone);
-  return new Date(utcGuess.getTime() - offsetMinutes * 60000);
+function normalizeFilters(filters = {}) {
+  return {
+    p_search: String(filters.search || "").trim() || null,
+    p_status: filters.status && filters.status !== "all" ? filters.status : null,
+    p_payment_status:
+      filters.paymentStatus && filters.paymentStatus !== "all" ? filters.paymentStatus : null,
+    p_location: filters.location && filters.location !== "all" ? filters.location : null,
+    p_date_from: filters.dateFrom || null,
+    p_date_to: filters.dateTo || null,
+  };
 }
 
 export async function loadAdminOrders({ filters, page, pageSize }) {
-  if (!adminSupabase) {
-    return { data: null, error: new Error("請先設定 config.js"), count: 0 };
-  }
+  if (!adminSupabase) return missingClient({ count: 0 });
 
-  let query = adminSupabase
-    .from("orders")
-    .select(
-      "id, created_at, customer_name, phone, delivery_location, note, total_amount, status, admin_note, order_items(*)",
-      { count: "exact" }
-    )
-    .order("created_at", { ascending: false });
+  const { data, error } = await adminSupabase.rpc("admin_list_orders", {
+    ...normalizeFilters(filters),
+    p_limit: pageSize,
+    p_offset: Math.max(0, (page - 1) * pageSize),
+  });
 
-  if (filters.status && filters.status !== "all") {
-    query = query.eq("status", filters.status);
-  }
-
-  if (filters.location && filters.location !== "all") {
-    query = query.eq("delivery_location", filters.location);
-  }
-
-  const year = Number(filters.year);
-  const month = Number(filters.month);
-  if (Number.isFinite(year) && Number.isFinite(month)) {
-    const start = getUtcDateForTimeZoneLocal(year, month, 1, "Asia/Taipei");
-    const nextYear = month === 12 ? year + 1 : year;
-    const nextMonth = month === 12 ? 1 : month + 1;
-    const end = getUtcDateForTimeZoneLocal(nextYear, nextMonth, 1, "Asia/Taipei");
-    query = query.gte("created_at", start.toISOString()).lt("created_at", end.toISOString());
-  }
-
-  const rangeFrom = (page - 1) * pageSize;
-  const rangeTo = rangeFrom + pageSize - 1;
-  return query.range(rangeFrom, rangeTo);
-}
-
-export async function updateAdminOrder(orderId, payload) {
-  if (!adminSupabase) {
-    return { data: null, error: new Error("請先設定 config.js") };
-  }
-
-  return adminSupabase.from("orders").update(payload).eq("id", orderId).select("id").maybeSingle();
-}
-
-export async function checkAdminAccess() {
-  if (!adminSupabase) {
-    return { data: false, error: new Error("請先設定 config.js") };
-  }
-
-  const { data, error } = await adminSupabase.from("admin_users").select("user_id").limit(1).maybeSingle();
   return {
-    data: Boolean(data),
+    data: Array.isArray(data?.items) ? data.items : [],
+    count: Number(data?.total || 0),
     error,
   };
 }
 
-export async function bulkUpdateOrders(ids, status) {
-  if (!adminSupabase) {
-    return { data: null, error: new Error("請先設定 config.js") };
-  }
+export async function loadAdminSummary() {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_order_summary");
+}
 
-  return adminSupabase.from("orders").update({ status }).in("id", ids).select("id");
+export async function updateAdminOrder(orderId, payload, reason = "") {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_update_order", {
+    p_order_id: orderId,
+    p_status: payload.status,
+    p_admin_note: payload.admin_note ?? null,
+    p_reason: String(reason || "").trim() || null,
+  });
+}
+
+export async function saveAdminOrderPayment(orderId, payment) {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_save_order_payment", {
+    p_order_id: orderId,
+    p_phase: payment.phase,
+    p_amount: Math.max(0, Math.floor(Number(payment.amount) || 0)),
+    p_method: payment.method || null,
+    p_paid_at: payment.paidAt || null,
+    p_review_complete: payment.reviewComplete !== false,
+  });
+}
+
+export async function loadOrderEvents(orderId) {
+  if (!adminSupabase || !orderId) return { data: [], error: null };
+  return adminSupabase
+    .from("order_events")
+    .select("id, order_id, actor_user_id, actor_email, event_type, details, created_at")
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false });
+}
+
+export async function exportAdminOrders(filters) {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_export_orders", normalizeFilters(filters));
+}
+
+export async function checkAdminAccess() {
+  if (!adminSupabase) return { data: false, error: new Error("請先設定 config.js") };
+  const { data, error } = await adminSupabase
+    .from("admin_users")
+    .select("user_id")
+    .limit(1)
+    .maybeSingle();
+  return { data: Boolean(data), error };
+}
+
+export async function bulkUpdateOrders(ids, status, reason = "批次更新") {
+  const updated = [];
+  for (const id of ids) {
+    const { data, error } = await updateAdminOrder(id, { status }, reason);
+    if (error) return { data: updated, error };
+    if (data) updated.push(data);
+  }
+  return { data: updated, error: null };
 }

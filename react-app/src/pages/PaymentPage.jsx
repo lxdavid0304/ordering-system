@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Banknote, Check, Landmark, MapPin, ReceiptText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
@@ -11,6 +12,7 @@ import {
 } from "../utils/orders";
 import { formatCurrency, formatDateTime } from "../utils/format";
 import { readPaymentPreview, saveOrderDraft, savePaymentPreview } from "../utils/storage";
+import { setOrderPaymentMethod } from "../services/orderService";
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ export default function PaymentPage() {
   const [preview, setPreview] = useState(null);
   const [selectedMethod, setSelectedMethod] = useState("");
   const [message, setMessage] = useState({ text: "", type: "" });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const nextPreview = readPaymentPreview();
@@ -43,12 +46,7 @@ export default function PaymentPage() {
       total_amount: totalAmount,
     });
     setSelectedMethod(nextMethod);
-    setMessage({
-      text: isTransferRequired(totalAmount)
-        ? "此筆訂單最終總金額超過門檻，需先選擇轉帳付款。"
-        : "請選擇付款方式後繼續。",
-      type: "",
-    });
+    setMessage({ text: "", type: "" });
   }, []);
 
   if (!preview) {
@@ -69,6 +67,14 @@ export default function PaymentPage() {
   const depositAmount = needsDeposit ? calculateDepositAmount(totalAmount) : 0;
   const remainingAmount = Math.max(0, totalAmount - depositAmount);
   const cashAvailable = !needsDeposit;
+  const transferAmount = needsDeposit ? depositAmount : totalAmount;
+  const displayedDueAmount = selectedMethod === "cash" ? totalAmount : selectedMethod === "transfer" ? transferAmount : 0;
+  const displayedDueLabel = selectedMethod === "cash"
+    ? "取餐應付"
+    : selectedMethod === "transfer"
+      ? "本次轉帳金額"
+      : "請選擇付款方式";
+  const shortOrderId = String(preview.order_id || "").slice(0, 8);
 
   function handleMethodSelect(method) {
     if (method === "cash" && !cashAvailable) {
@@ -77,9 +83,23 @@ export default function PaymentPage() {
     setSelectedMethod(method);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!selectedMethod) {
       setMessage({ text: "請先選擇付款方式。", type: "error" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage({ text: "正在儲存付款方式...", type: "" });
+    const { error } = await setOrderPaymentMethod(preview.order_id, selectedMethod);
+    if (error) {
+      setSaving(false);
+      setMessage({
+        text: String(error.message || "").includes("member_set_order_payment_method")
+          ? "付款功能尚未完成資料庫更新，請聯絡管理員。"
+          : `付款方式儲存失敗：${error.message || "請稍後再試"}`,
+        type: "error",
+      });
       return;
     }
 
@@ -89,6 +109,7 @@ export default function PaymentPage() {
       payment_selection_submitted_at: new Date().toISOString(),
     };
     savePaymentPreview(nextPreview);
+    setSaving(false);
     navigate("/pending-order", { replace: true });
   }
 
@@ -112,121 +133,142 @@ export default function PaymentPage() {
       active="order"
       pageClassName="payment-page"
     >
-      <section className="card payment-card">
-        <div className="payment-summary">
-          <div className="payment-summary-item">
+      <section className="payment-checkout">
+        <div className="payment-order-strip" aria-label="本次訂單資訊">
+          <div className="payment-order-primary">
+            <ReceiptText size={17} aria-hidden="true" />
             <span>訂單編號</span>
-            <strong>{preview.order_id || "--"}</strong>
+            <strong title={preview.order_id || ""}>#{shortOrderId || "--"}</strong>
+            <time>{formatDateTime(preview.created_at)}</time>
           </div>
-          <div className="payment-summary-item">
-            <span>送出時間</span>
-            <strong>{formatDateTime(preview.created_at)}</strong>
-          </div>
-          <div className="payment-summary-item">
-            <span>運送地點</span>
+          <div>
+            <MapPin size={17} aria-hidden="true" />
+            <span>交貨地點</span>
             <strong>{preview.delivery_location || "--"}</strong>
           </div>
         </div>
 
-        <div className="payment-rule-banner">
-          {needsDeposit
-            ? "最終總金額超過 300 元，需先支付 50% 訂金，餘額於取餐時補齊。"
-            : "最終總金額未超過 300 元，可選擇現金付款或轉帳付款。"}
-        </div>
+        <div className="payment-checkout-grid">
+          <div className="payment-method-column">
+            <header className="payment-section-head">
+              <span>PAYMENT METHOD</span>
+              <h2>選擇付款方式</h2>
+              <p>請確認本次付款方式，送出後可在進行中訂單查看處理狀態。</p>
+            </header>
 
-        <div className="payment-amount-panel">
-          <div className="payment-amount-row">
-            <span>商品總價</span>
-            <strong>{formatCurrency(itemsTotal)}</strong>
-          </div>
-          <div className="payment-amount-row">
-            <span>運費</span>
-            <strong>{formatCurrency(shippingAmount)}</strong>
-          </div>
-          <div className="payment-amount-row">
-            <span>最終總金額</span>
-            <strong>{formatCurrency(totalAmount)}</strong>
-          </div>
-          <div className="payment-amount-row">
-            <span>訂金{needsDeposit ? "（50%）" : ""}</span>
-            <strong>{needsDeposit ? formatCurrency(depositAmount) : "無需訂金"}</strong>
-          </div>
-          {needsDeposit ? (
-            <div className="payment-amount-row">
-              <span>剩餘金額</span>
-              <strong>{formatCurrency(remainingAmount)}</strong>
-            </div>
-          ) : null}
-        </div>
+            <div className="payment-method-list" role="radiogroup" aria-label="付款方式">
+              <label
+                className={`payment-method-choice ${selectedMethod === "cash" ? "active" : ""} ${
+                  cashAvailable ? "selectable" : "locked"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="payment-method"
+                  value="cash"
+                  checked={selectedMethod === "cash"}
+                  disabled={!cashAvailable}
+                  onChange={() => handleMethodSelect("cash")}
+                />
+                <span className="payment-choice-icon"><Banknote size={21} aria-hidden="true" /></span>
+                <span className="payment-choice-copy">
+                  <span className="payment-choice-title">
+                    <strong>現金付款</strong>
+                    <small>{cashAvailable ? "取餐支付" : "不適用"}</small>
+                  </span>
+                  <span className="payment-choice-description">
+                    {cashAvailable
+                      ? `${formatCurrency(totalAmount)} 元`
+                      : "超過 300 元需先付訂金"}
+                  </span>
+                </span>
+                <span className="payment-choice-check" aria-hidden="true">
+                  {selectedMethod === "cash" ? <Check size={16} /> : null}
+                </span>
+              </label>
 
-        <div className="payment-method-grid" role="radiogroup" aria-label="付款方式">
-          <article
-            className={`payment-method-card ${selectedMethod === "cash" ? "active" : "inactive"} ${
-              cashAvailable ? "selectable" : "locked"
-            }`}
-            role="radio"
-            aria-checked={selectedMethod === "cash"}
-            aria-disabled={!cashAvailable}
-            tabIndex={cashAvailable ? 0 : -1}
-            onClick={() => handleMethodSelect("cash")}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                handleMethodSelect("cash");
-              }
-            }}
-          >
-            <div className="payment-method-head">
-              <h2>現金付款</h2>
-              <span className={`payment-tag ${selectedMethod === "cash" ? "active" : "muted"}`}>
-                {cashAvailable ? "可選" : "不可選"}
-              </span>
+              <label className={`payment-method-choice selectable ${selectedMethod === "transfer" ? "active" : ""}`}>
+                <input
+                  type="radio"
+                  name="payment-method"
+                  value="transfer"
+                  checked={selectedMethod === "transfer"}
+                  onChange={() => handleMethodSelect("transfer")}
+                />
+                <span className="payment-choice-icon"><Landmark size={21} aria-hidden="true" /></span>
+                <span className="payment-choice-copy">
+                  <span className="payment-choice-title">
+                    <strong>轉帳付款</strong>
+                    <small>{needsDeposit ? "50% 訂金" : "全額付款"}</small>
+                  </span>
+                  <span className="payment-choice-description">
+                    {needsDeposit
+                      ? `先付 ${formatCurrency(depositAmount)} · 取餐補 ${formatCurrency(remainingAmount)}`
+                      : `轉帳 ${formatCurrency(totalAmount)} 元`}
+                  </span>
+                </span>
+                <span className="payment-choice-check" aria-hidden="true">
+                  {selectedMethod === "transfer" ? <Check size={16} /> : null}
+                </span>
+              </label>
             </div>
-            <p>
-              {cashAvailable
-                ? "最終總金額 300 元以下可於取餐時以現金付款。"
-                : "此筆訂單最終總金額超過 300 元，不能選擇現金付款。"}
+
+            <div className="payment-rule-note">
+              <strong>付款規則</strong>
+              <p>
+                {needsDeposit
+                  ? "訂單總金額超過 300 元，需先支付 50% 訂金，剩餘款項於取餐時補齊。"
+                  : "訂單總金額未超過 300 元，可選擇現金或轉帳付款。"}
+              </p>
+            </div>
+
+            <FormMessage text={message.text} type={message.type} />
+            <p className="payment-order-warning">
+              返回填單後再次送出會建立新訂單，不會修改目前這筆訂單。
             </p>
-          </article>
+          </div>
 
-          <article
-            className={`payment-method-card ${selectedMethod === "transfer" ? "active" : "inactive"} selectable`}
-            role="radio"
-            aria-checked={selectedMethod === "transfer"}
-            tabIndex={0}
-            onClick={() => handleMethodSelect("transfer")}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                handleMethodSelect("transfer");
-              }
-            }}
-          >
-            <div className="payment-method-head">
-              <h2>轉帳付款</h2>
-              <span className={`payment-tag ${selectedMethod === "transfer" ? "active" : "muted"}`}>
-                可選
-              </span>
+          <aside className="payment-receipt" aria-label="付款摘要">
+            <header>
+              <span>ORDER SUMMARY</span>
+              <h2>付款摘要</h2>
+            </header>
+            <div className="payment-receipt-rows">
+              <div><span>商品總價</span><strong>{formatCurrency(itemsTotal)}</strong></div>
+              <div><span>運費</span><strong>{formatCurrency(shippingAmount)}</strong></div>
+              <div className="payment-receipt-total"><span>訂單總額</span><strong>{formatCurrency(totalAmount)}</strong></div>
+              {needsDeposit ? (
+                <div><span>取餐補款</span><strong>{formatCurrency(remainingAmount)}</strong></div>
+              ) : null}
             </div>
-            <p>
-              {needsDeposit
-                ? `本次需先支付訂金 ${formatCurrency(depositAmount)}，剩餘 ${formatCurrency(
-                    remainingAmount
-                  )} 於取餐時補齊。`
-                : "若你希望先轉帳，也可以在此選擇轉帳付款。"}
-            </p>
-          </article>
+            <div className="payment-due-block">
+              <span>{displayedDueLabel}</span>
+              <strong>{formatCurrency(displayedDueAmount)}</strong>
+              <small>
+                {selectedMethod === "cash"
+                  ? "取餐時支付"
+                  : selectedMethod === "transfer"
+                    ? "確認付款方式後等待管理員核對"
+                    : "選擇後將顯示本次付款金額"}
+              </small>
+            </div>
+            <div className="payment-selected-method">
+              <span>付款方式</span>
+              <strong>{selectedMethod === "cash" ? "現金付款" : selectedMethod === "transfer" ? "轉帳付款" : "尚未選擇"}</strong>
+            </div>
+            <button type="button" className="primary payment-confirm-btn" disabled={saving || !selectedMethod} onClick={handleSubmit}>
+              {saving ? "儲存中..." : "確認付款方式"}
+            </button>
+            <button type="button" className="ghost payment-return-btn" onClick={handleReturnToOrder}>
+              返回填單
+            </button>
+          </aside>
         </div>
 
-        <FormMessage text={message.text} type={message.type} />
-        <p className="muted">若返回訂單頁補商品，再次送出後會新增一筆新訂單，不會直接修改目前這筆。</p>
-
-        <div className="actions payment-actions">
-          <button type="button" className="ghost" onClick={handleReturnToOrder}>
-            返回訂單頁面
-          </button>
-          <button type="button" className="primary" onClick={handleSubmit}>
-            確認並查看訂單
+        <div className="payment-mobile-bar">
+          <span><small>{displayedDueLabel}</small><strong>{formatCurrency(displayedDueAmount)}</strong></span>
+          <button type="button" className="primary" disabled={saving || !selectedMethod} onClick={handleSubmit}>
+            {saving ? "儲存中..." : "確認付款方式"}
           </button>
         </div>
       </section>

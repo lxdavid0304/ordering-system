@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { adminSupabase, memberSupabase } from "../lib/supabase";
+import { memberSupabase } from "../lib/supabase";
 
 const MemberAuthContext = createContext(null);
-const AdminAuthContext = createContext(null);
 
-function ScopedAuthProvider({ children, client, context, errorLabel }) {
+function ScopedAuthProvider({ children, client, context, errorLabel, resolveAdminAccess = false }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminLoading, setAdminLoading] = useState(resolveAdminAccess);
 
   const signOut = useCallback(async () => {
     if (client) {
@@ -62,15 +63,59 @@ function ScopedAuthProvider({ children, client, context, errorLabel }) {
     };
   }, [client, errorLabel, session]);
 
+  useEffect(() => {
+    if (!resolveAdminAccess) {
+      setIsAdmin(false);
+      setAdminLoading(false);
+      return undefined;
+    }
+
+    if (loading) {
+      setAdminLoading(true);
+      return undefined;
+    }
+
+    if (!client || !session?.user?.id) {
+      setIsAdmin(false);
+      setAdminLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setAdminLoading(true);
+
+    client
+      .from("admin_users")
+      .select("user_id")
+      .eq("user_id", session.user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) {
+          return;
+        }
+        if (error) {
+          console.warn("[AuthContext] 管理員權限檢查失敗", error.message);
+        }
+        setIsAdmin(Boolean(data) && !error);
+        setAdminLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [client, loading, resolveAdminAccess, session?.user?.id]);
+
   const value = useMemo(
     () => ({
       session,
       user: session?.user || null,
       loading,
+      isAdmin,
+      adminLoading,
       signOut,
       supabase: client,
     }),
-    [client, loading, session, signOut]
+    [adminLoading, client, isAdmin, loading, session, signOut]
   );
 
   const Context = context;
@@ -79,18 +124,11 @@ function ScopedAuthProvider({ children, client, context, errorLabel }) {
 
 export function AuthProvider({ children }) {
   return (
-    <ScopedAuthProvider client={memberSupabase} context={MemberAuthContext} errorLabel="AuthContext">
-      {children}
-    </ScopedAuthProvider>
-  );
-}
-
-export function AdminAuthProvider({ children }) {
-  return (
     <ScopedAuthProvider
-      client={adminSupabase}
-      context={AdminAuthContext}
-      errorLabel="AdminAuthContext"
+      client={memberSupabase}
+      context={MemberAuthContext}
+      errorLabel="AuthContext"
+      resolveAdminAccess
     >
       {children}
     </ScopedAuthProvider>
@@ -101,14 +139,6 @@ export function useAuth() {
   const context = useContext(MemberAuthContext);
   if (!context) {
     throw new Error("useAuth must be used inside AuthProvider");
-  }
-  return context;
-}
-
-export function useAdminAuth() {
-  const context = useContext(AdminAuthContext);
-  if (!context) {
-    throw new Error("useAdminAuth must be used inside AdminAuthProvider");
   }
   return context;
 }

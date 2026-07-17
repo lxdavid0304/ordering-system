@@ -1,3 +1,6 @@
 dist/
 react-app/node_modules/
 react-app/dist/
+supabase/.temp/
+node-server*.log
+r.end('ok')).listen(5173

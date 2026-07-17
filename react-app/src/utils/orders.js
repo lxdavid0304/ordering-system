@@ -22,6 +22,7 @@ export function createEmptyOrderItem() {
     product_name: "",
     unit_price: 0,
     quantity: 1,
+    catalog_product_id: null,
   };
 }
 
@@ -38,10 +39,12 @@ export function normalizeOrderItem(item) {
   if (!productName) {
     return null;
   }
+  const catalogProductId = String(item?.catalog_product_id || "").trim();
   return {
     product_name: productName,
     unit_price: normalizeAmount(item?.unit_price),
     quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+    ...(catalogProductId ? { catalog_product_id: catalogProductId } : {}),
   };
 }
 
@@ -149,16 +152,33 @@ export function getMemberOrderStatusLabel(status) {
     return "待確認訂金";
   }
   if (status === "open") {
-    return "進行中";
+    return "採買進行中";
   }
-  if (status === "fulfilled" || status === "archived") {
+  if (status === "ready_pickup") {
+    return "待取貨";
+  }
+  if (status === "fulfilled") {
     return "已完成";
   }
-  return "進行中";
+  if (status === "archived") {
+    return "歷史紀錄";
+  }
+  return "狀態更新中";
+}
+
+export function getMemberOrderProgress(status) {
+  const progress = {
+    pending_deposit: 0,
+    open: 1,
+    ready_pickup: 2,
+    fulfilled: 3,
+    archived: 3,
+  };
+  return progress[status] ?? 0;
 }
 
 export function isOngoingOrderStatus(status) {
-  return status === "pending_deposit" || status === "open";
+  return status === "pending_deposit" || status === "open" || status === "ready_pickup";
 }
 
 export function isCompletedOrderStatus(status) {

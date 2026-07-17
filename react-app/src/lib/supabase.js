@@ -2,14 +2,13 @@ import { createClient } from "@supabase/supabase-js";
 import { appConfig, configOk } from "./config";
 
 const MEMBER_AUTH_STORAGE_KEY = "ordering-system-member-auth";
-const ADMIN_AUTH_STORAGE_KEY = "ordering-system-admin-auth";
 
-function isAdminRoute() {
+function isPasswordResetRoute() {
   if (typeof window === "undefined") {
     return false;
   }
 
-  return /^\/admin(?:\/|$)/.test(window.location.pathname);
+  return /^\/reset-password(?:\/|$)/.test(window.location.pathname);
 }
 
 function createScopedClient(storageKey, detectSessionInUrl = false) {
@@ -27,7 +26,7 @@ function createScopedClient(storageKey, detectSessionInUrl = false) {
   });
 }
 
-export const memberSupabase = createScopedClient(MEMBER_AUTH_STORAGE_KEY, false);
-export const adminSupabase = createScopedClient(ADMIN_AUTH_STORAGE_KEY, isAdminRoute());
+export const memberSupabase = createScopedClient(MEMBER_AUTH_STORAGE_KEY, isPasswordResetRoute());
+export const adminSupabase = memberSupabase;
 
 export const supabase = memberSupabase;

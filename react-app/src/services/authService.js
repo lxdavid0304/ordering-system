@@ -1,4 +1,4 @@
-import { adminSupabase, memberSupabase } from "../lib/supabase";
+import { memberSupabase } from "../lib/supabase";
 import {
   buildLoginCandidates,
   looksLikeEmail,
@@ -60,7 +60,14 @@ export async function loginMember(loginId, password) {
   return { success: false, error: lastError };
 }
 
-export async function registerMember({ fullName, account, phone, email, password }) {
+export async function registerMember({
+  fullName,
+  account,
+  phone,
+  email,
+  password,
+  emailRedirectTo,
+}) {
   if (!memberSupabase) {
     return { success: false, error: new Error("請先設定 config.js") };
   }
@@ -72,6 +79,7 @@ export async function registerMember({ fullName, account, phone, email, password
     email: normalizedEmail,
     password,
     options: {
+      emailRedirectTo,
       data: {
         full_name: fullName,
         account: normalizedAccount,
@@ -85,7 +93,9 @@ export async function registerMember({ fullName, account, phone, email, password
     return { success: false, error };
   }
 
-  if (data?.user) {
+  // Without a session the email still needs confirmation. The database trigger
+  // creates member_profiles, while an anonymous upsert would be rejected by RLS.
+  if (data?.user && data?.session) {
     const { error: profileError } = await upsertMemberProfile(data.user.id, {
       full_name: fullName,
       account: normalizedAccount,
@@ -104,29 +114,41 @@ export async function registerMember({ fullName, account, phone, email, password
     await memberSupabase.auth.signOut();
   }
 
-  return { success: true, error: null };
+  return {
+    success: true,
+    error: null,
+    requiresEmailConfirmation: !data?.session,
+  };
 }
 
-export async function signInAdmin(email, password) {
-  if (!adminSupabase) {
-    return { error: new Error("請先設定 config.js") };
+export function getRegistrationErrorText(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").trim();
+
+  if (
+    error?.status === 429 ||
+    code === "over_email_send_rate_limit" ||
+    /email.*rate limit|rate limit.*email/i.test(message)
+  ) {
+    return "驗證信寄送次數已達目前上限，請稍後再試；刪除帳號不會重設此限制。";
+  }
+  if (code === "user_already_exists" || /already registered|user already exists/i.test(message)) {
+    return "此 Email 已經註冊，請直接登入或使用忘記密碼。";
+  }
+  if (/member_profiles_account_key|account.*duplicate/i.test(message)) {
+    return "此帳號已被使用，請更換帳號。";
+  }
+  if (/member_profiles_real_phone_key|phone.*duplicate/i.test(message)) {
+    return "此手機號碼已被使用，請直接登入原帳號。";
+  }
+  if (/member_profiles_email_key|email.*duplicate/i.test(message)) {
+    return "此 Email 已經註冊，請直接登入或使用忘記密碼。";
+  }
+  if (/failed to fetch|network/i.test(message)) {
+    return "無法連線到會員服務，請稍後再試。";
   }
 
-  return adminSupabase.auth.signInWithPassword({
-    email: email.trim(),
-    password,
-  });
-}
-
-export async function signInAdminWithGitHub(redirectTo) {
-  if (!adminSupabase) {
-    return { error: new Error("請先設定 config.js") };
-  }
-
-  return adminSupabase.auth.signInWithOAuth({
-    provider: "github",
-    options: { redirectTo },
-  });
+  return "註冊失敗，請稍後再試；若持續發生請聯絡管理員。";
 }
 
 export async function verifyPassword(email, password) {
@@ -141,4 +163,14 @@ export async function updatePassword(password) {
     return { error: new Error("請先設定 config.js") };
   }
   return memberSupabase.auth.updateUser({ password });
+}
+
+export async function requestPasswordReset(email, redirectTo) {
+  if (!memberSupabase) {
+    return { error: new Error("請先設定 config.js") };
+  }
+
+  return memberSupabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo,
+  });
 }

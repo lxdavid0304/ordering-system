@@ -41,6 +41,42 @@ function sanitizeToken(value: unknown) {
   return sanitizeText(value, 5000);
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+type CleanedItem = {
+  product_name: string;
+  unit_price: number;
+  quantity: number;
+  catalog_product_id?: string;
+};
+
+type CatalogProduct = {
+  id: string;
+  product_name: string;
+  specification: string;
+  category: string;
+  unit_price_min: number | null;
+  unit_price: number;
+  is_active: boolean;
+};
+
+function mapCatalogProduct(product: CatalogProduct) {
+  const displayName = [product.product_name, product.specification].filter(Boolean).join(" ");
+  return {
+    id: product.id,
+    product_name: product.product_name,
+    specification: product.specification,
+    category: product.category,
+    unit_price_min: product.unit_price_min,
+    unit_price: product.unit_price,
+    display_name: displayName,
+  };
+}
+
 function getDatePartsInTimeZone(timeZone: string) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -153,11 +189,15 @@ serve(async (req) => {
     return jsonResponse({ error: "Member profile required" }, 403);
   }
 
-  const cleanedItems = [];
+  const cleanedItems: CleanedItem[] = [];
   for (const item of items) {
     const name = sanitizeText((item as Record<string, unknown>)?.product_name, 100);
     const unitPrice = Number((item as Record<string, unknown>)?.unit_price);
     const quantity = Number((item as Record<string, unknown>)?.quantity);
+    const catalogProductId = sanitizeText(
+      (item as Record<string, unknown>)?.catalog_product_id,
+      64
+    );
 
     if (!name) {
       continue;
@@ -175,11 +215,75 @@ serve(async (req) => {
       product_name: name,
       unit_price: Math.floor(unitPrice),
       quantity: Math.floor(quantity),
+      ...(catalogProductId ? { catalog_product_id: catalogProductId } : {}),
     });
   }
 
   if (cleanedItems.length === 0) {
     return jsonResponse({ error: "Items required" }, 400);
+  }
+
+  const catalogItems = cleanedItems.filter((item) => item.catalog_product_id);
+  const invalidCatalogIds = catalogItems
+    .map((item) => item.catalog_product_id || "")
+    .filter((id) => !isUuid(id));
+  if (invalidCatalogIds.length) {
+    return jsonResponse(
+      {
+        code: "CATALOG_UNAVAILABLE",
+        error: "Catalog product unavailable",
+        product_ids: invalidCatalogIds,
+      },
+      409
+    );
+  }
+
+  const catalogIds = Array.from(
+    new Set(catalogItems.map((item) => item.catalog_product_id).filter(Boolean))
+  ) as string[];
+
+  if (catalogIds.length) {
+    const { data: catalogData, error: catalogError } = await supabase
+      .from("popular_products")
+      .select("id, product_name, specification, category, unit_price_min, unit_price, is_active")
+      .in("id", catalogIds);
+
+    if (catalogError) {
+      return jsonResponse({ error: "Catalog validation failed" }, 500);
+    }
+
+    const catalogMap = new Map(
+      ((catalogData || []) as CatalogProduct[]).map((product) => [product.id, product])
+    );
+    const unavailableIds = catalogIds.filter((id) => !catalogMap.get(id)?.is_active);
+    if (unavailableIds.length) {
+      return jsonResponse(
+        {
+          code: "CATALOG_UNAVAILABLE",
+          error: "Catalog product unavailable",
+          product_ids: unavailableIds,
+        },
+        409
+      );
+    }
+
+    const changedProducts = catalogItems
+      .filter((item) => {
+        const product = catalogMap.get(item.catalog_product_id || "");
+        return product && item.unit_price !== Number(product.unit_price);
+      })
+      .map((item) => mapCatalogProduct(catalogMap.get(item.catalog_product_id || "")!));
+
+    if (changedProducts.length) {
+      return jsonResponse(
+        {
+          code: "CATALOG_PRICE_CHANGED",
+          error: "Catalog price changed",
+          items: changedProducts,
+        },
+        409
+      );
+    }
   }
 
   const { data: openNow, error: openError } = await supabase.rpc("ordering_open_now");
@@ -200,7 +304,73 @@ serve(async (req) => {
   });
 
   if (orderError) {
+    const message = String(orderError.message || "");
+    if (message.includes("CATALOG_PRICE_CHANGED") || message.includes("CATALOG_UNAVAILABLE")) {
+      const { data: latestCatalog } = catalogIds.length
+        ? await supabase
+            .from("popular_products")
+            .select("id, product_name, specification, category, unit_price_min, unit_price, is_active")
+            .in("id", catalogIds)
+        : { data: [] };
+      const latestMap = new Map(
+        ((latestCatalog || []) as CatalogProduct[]).map((product) => [product.id, product])
+      );
+      const unavailableIds = catalogIds.filter((id) => !latestMap.get(id)?.is_active);
+      if (unavailableIds.length || message.includes("CATALOG_UNAVAILABLE")) {
+        return jsonResponse(
+          {
+            code: "CATALOG_UNAVAILABLE",
+            error: "Catalog product unavailable",
+            product_ids: unavailableIds.length ? unavailableIds : catalogIds,
+          },
+          409
+        );
+      }
+      return jsonResponse(
+        {
+          code: "CATALOG_PRICE_CHANGED",
+          error: "Catalog price changed",
+          items: ((latestCatalog || []) as CatalogProduct[])
+            .filter((product) => product.is_active)
+            .map(mapCatalogProduct),
+        },
+        409
+      );
+    }
     return jsonResponse({ error: "Failed to create order" }, 500);
   }
-  return jsonResponse({ order_id: orderId }, 200);
+
+  const { data: savedOrder, error: savedOrderError } = await supabase
+    .from("orders")
+    .select(
+      "id, total_amount, status, order_items(product_name, unit_price, quantity, line_total)"
+    )
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (savedOrderError || !savedOrder) {
+    return jsonResponse({ error: "Order created but could not be reloaded" }, 500);
+  }
+
+  const acceptedItems = Array.isArray(savedOrder.order_items) ? savedOrder.order_items : [];
+  const itemsTotal = acceptedItems.reduce(
+    (sum, item) => sum + Number(item.line_total || 0),
+    0
+  );
+  const shippingAmount = acceptedItems.reduce(
+    (sum, item) => sum + Math.max(1, Number(item.quantity) || 1) * 20,
+    0
+  );
+
+  return jsonResponse(
+    {
+      order_id: savedOrder.id,
+      items_total: itemsTotal,
+      shipping_amount: shippingAmount,
+      total_amount: Number(savedOrder.total_amount || 0),
+      status: savedOrder.status,
+      order_items: acceptedItems,
+    },
+    200
+  );
 });

@@ -1,805 +1,412 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import AdminOrderCard from "../components/AdminOrderCard";
-import FormMessage from "../components/FormMessage";
-import { useAdminAuth } from "../context/AuthContext";
-import { appConfig, configOk } from "../lib/config";
-import { bulkUpdateOrders, checkAdminAccess, loadAdminOrders, updateAdminOrder } from "../services/adminService";
-import { signInAdmin, signInAdminWithGitHub } from "../services/authService";
-import { loadOrderingSchedule, saveOrderingSchedule } from "../services/scheduleService";
-import { weekdayLabels } from "../utils/schedule";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bell,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Filter,
+  PackageCheck,
+  RefreshCw,
+  Search,
+  WalletCards,
+} from "lucide-react";
+import AdminLayout from "../components/AdminLayout";
+import AdminOrderDrawer from "../components/AdminOrderDrawer";
+import {
+  bulkUpdateOrders,
+  exportAdminOrders,
+  loadAdminOrders,
+  loadAdminSummary,
+} from "../services/adminService";
+import {
+  adminStatusLabels,
+  adminStatusOrder,
+  getAdminStatusLabel,
+  getNextAdminStatus,
+  getPaymentStatus,
+  paymentStatusLabels,
+} from "../utils/adminOrders";
+import { formatCurrency, formatDateTime } from "../utils/format";
 
-const statusLabels = {
-  pending_deposit: "待確認訂金",
-  open: "進行中",
-  fulfilled: "已完成",
-  archived: "歷史紀錄",
+const pageSize = 12;
+const locations = ["明德樓", "據德樓", "蘊德樓", "機車停車場"];
+
+const initialFilters = {
+  status: "all",
+  paymentStatus: "all",
+  location: "all",
+  dateFrom: "",
+  dateTo: "",
 };
 
-const locationOptions = ["明德樓", "據德樓", "蘊德樓", "機車停車場"];
-const yearOptions = ["all", "2026", "2027"];
-const monthOptions = ["all", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
-const pageSize = 6;
-const adminRequiredMessage =
-  "目前登入帳號未加入 admin_users，無法使用管理功能。請先將該帳號的 auth.users.id 加入 public.admin_users。";
-
-function getErrorText(error, fallbackText) {
-  const raw = String(error?.message || "").trim();
-  if (!raw) {
-    return fallbackText;
-  }
-  if (/row-level security|permission denied|not allowed/i.test(raw)) {
-    return "權限不足，請確認目前登入帳號已加入 admin_users。";
-  }
-  return raw;
+function escapeCsv(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
-async function resolveNoDataPermissionMessage(fallbackText) {
-  const { data, error } = await checkAdminAccess();
-  if (error) {
-    return getErrorText(error, fallbackText);
+function getAdminError(error) {
+  const raw = String(error?.message || "");
+  if (raw.includes("Could not find the function") || raw.includes("admin_list_orders")) {
+    return "後台資料庫功能尚未更新，請先執行最新 Supabase migration。";
   }
-  if (!data) {
-    return adminRequiredMessage;
-  }
-  return fallbackText;
+  if (raw.includes("DEPOSIT_REQUIRED")) return "選取訂單仍有訂金未確認。";
+  if (raw.includes("PAYMENT_REQUIRED")) return "選取訂單仍有尾款未付清。";
+  return raw || "無法載入訂單，請稍後再試。";
 }
 
 export default function AdminPage() {
-  const { user: adminUser, signOut } = useAdminAuth();
-  const ordersRef = useRef(null);
-  const scheduleGearRef = useRef(null);
-  const schedulePanelRef = useRef(null);
-  const filterToggleRef = useRef(null);
-  const filterPanelRef = useRef(null);
-  const bulkToggleRef = useRef(null);
-  const bulkPanelRef = useRef(null);
-  const [email, setEmail] = useState(appConfig.ADMIN_DEFAULT_EMAIL || "");
-  const [password, setPassword] = useState("");
-  const [loginMessage, setLoginMessage] = useState({ text: "", type: "" });
-  const [adminVerified, setAdminVerified] = useState(false);
-  const [schedule, setSchedule] = useState({
-    is_always_open: false,
-    open_day: 0,
-    open_hour: 0,
-    close_day: 0,
-    close_hour: 0,
-  });
-  const [scheduleMessage, setScheduleMessage] = useState("");
   const [orders, setOrders] = useState([]);
-  const [lastUpdated, setLastUpdated] = useState("--");
-  const [filters, setFilters] = useState({
-    status: "all",
-    location: "all",
-    year: "all",
-    month: "all",
-  });
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
-  const [selectedOrders, setSelectedOrders] = useState([]);
-  const [bulkStatus, setBulkStatus] = useState("");
-  const [bulkMessage, setBulkMessage] = useState("");
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-  const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
-  const [schedulePanelOpen, setSchedulePanelOpen] = useState(true);
-  const [ordersEditing, setOrdersEditing] = useState(false);
+  const [summary, setSummary] = useState({
+    today_orders: 0,
+    pending_deposit: 0,
+    ready_pickup: 0,
+    outstanding_amount: 0,
+  });
+  const [filters, setFilters] = useState(initialFilters);
+  const [searchText, setSearchText] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const isDev = import.meta.env.DEV;
+  const [lastUpdated, setLastUpdated] = useState("--");
+  const [message, setMessage] = useState({ text: "", type: "" });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [newOrdersAvailable, setNewOrdersAvailable] = useState(false);
 
-  const totalPages = Math.max(1, Math.ceil((Number(totalOrders) || 0) / pageSize));
-  const visibleIds = useMemo(() => orders.map((order) => order.id), [orders]);
-  const allVisibleSelected = Boolean(visibleIds.length && visibleIds.every((id) => selectedOrders.includes(id)));
+  const requestFilters = useMemo(
+    () => ({ ...filters, search: searchQuery }),
+    [filters, searchQuery]
+  );
+  const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
+  const allVisibleSelected = Boolean(
+    orders.length && orders.every((order) => selectedIds.includes(order.id))
+  );
+  const selectedOrders = orders.filter((order) => selectedIds.includes(order.id));
+  const batchNextStatus = useMemo(() => {
+    if (!selectedOrders.length) return null;
+    const nextStatuses = new Set(selectedOrders.map((order) => getNextAdminStatus(order.status)));
+    return nextStatuses.size === 1 ? Array.from(nextStatuses)[0] : null;
+  }, [selectedOrders]);
 
   useEffect(() => {
-    document.title = "管理後台 | 訂購系統";
-  }, []);
+    const timer = setTimeout(() => {
+      setSearchQuery(searchText.trim());
+      setPage(1);
+      setSelectedIds([]);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   useEffect(() => {
-    if (!adminUser) {
-      setAdminVerified(false);
-      setOrders([]);
-      setSelectedOrders([]);
-      setTotalOrders(0);
-      setCurrentPage(1);
-      setScheduleMessage("");
-    }
-  }, [adminUser]);
-
-  useEffect(() => {
-    if (!adminUser) {
-      return;
-    }
-
     let active = true;
+    setLoading(true);
+    setRefreshing(true);
 
-    async function verifyAdmin() {
-      setAdminVerified(false);
-      setLoginMessage({ text: "權限確認中...", type: "" });
-
-      const { data, error } = await checkAdminAccess();
-      if (!active) {
-        return;
-      }
-
-      if (error) {
-        setLoginMessage({
-          text: `權限檢查失敗：${getErrorText(error, "請稍後再試")}`,
-          type: "error",
-        });
-        return;
-      }
-
-      if (!data) {
-        setLoginMessage({ text: adminRequiredMessage, type: "error" });
-        return;
-      }
-
-      setAdminVerified(true);
-      setLoginMessage({ text: "", type: "" });
-    }
-
-    verifyAdmin();
-    return () => {
-      active = false;
-    };
-  }, [adminUser]);
-
-  useEffect(() => {
-    if (!adminUser || !adminVerified) {
-      return;
-    }
-
-    let active = true;
-
-    async function refreshSchedule() {
-      const { data, error } = await loadOrderingSchedule("admin");
-      if (!active) {
-        return;
-      }
-      if (error || !data) {
-        setScheduleMessage("讀取失敗");
-        return;
-      }
-      setSchedule({
-        is_always_open: Boolean(data.is_always_open),
-        open_day: Number(data.open_day),
-        open_hour: Number(data.open_hour),
-        close_day: Number(data.close_day),
-        close_hour: Number(data.close_hour),
-      });
-      setScheduleMessage("");
-    }
-
-    refreshSchedule();
-    return () => {
-      active = false;
-    };
-  }, [adminUser, adminVerified]);
-
-  useEffect(() => {
-    if (!adminUser || !adminVerified) {
-      return;
-    }
-
-    let active = true;
-
-    async function refreshOrders(force = false) {
-      if (ordersEditing && !force) {
-        return;
-      }
-
-      const { data, error, count } = await loadAdminOrders({
-        filters,
-        page: currentPage,
-        pageSize,
-      });
-
-      if (!active) {
-        return;
-      }
-
-      if (error) {
+    Promise.all([
+      loadAdminOrders({ filters: requestFilters, page, pageSize }),
+      loadAdminSummary(),
+    ]).then(([ordersResult, summaryResult]) => {
+      if (!active) return;
+      if (ordersResult.error) {
         setOrders([]);
         setTotalOrders(0);
-        setLoginMessage({ text: getErrorText(error, "讀取失敗"), type: "error" });
-        return;
+        setMessage({ text: getAdminError(ordersResult.error), type: "error" });
+      } else {
+        setOrders(ordersResult.data || []);
+        setTotalOrders(Number(ordersResult.count || 0));
+        setSelectedIds((current) => current.filter((id) => (ordersResult.data || []).some((order) => order.id === id)));
+        setMessage({ text: "", type: "" });
       }
-
-      const nextOrders = data || [];
-      const nextTotalOrders = Number.isFinite(count) ? count : nextOrders.length;
-      const nextTotalPages = Math.max(1, Math.ceil((nextTotalOrders || 0) / pageSize));
-      if (currentPage > nextTotalPages) {
-        setCurrentPage(nextTotalPages);
-        return;
+      if (!summaryResult.error && summaryResult.data) {
+        setSummary(summaryResult.data);
       }
-
-      setOrders(nextOrders);
-      setTotalOrders(nextTotalOrders);
-      setSelectedOrders((current) => current.filter((id) => nextOrders.some((order) => order.id === id)));
       setLastUpdated(new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }));
-      setLoginMessage({ text: "", type: "" });
-    }
-
-    refreshOrders(true);
-    const timer = setInterval(() => refreshOrders(false), 30000);
+      setLoading(false);
+      setRefreshing(false);
+    });
 
     return () => {
       active = false;
-      clearInterval(timer);
     };
-  }, [adminUser, adminVerified, currentPage, filters, ordersEditing, refreshKey]);
+  }, [page, refreshKey, requestFilters]);
 
   useEffect(() => {
-    if (!adminUser || !adminVerified) {
-      return;
-    }
+    const timer = setInterval(async () => {
+      const { data, error } = await loadAdminSummary();
+      if (error || !data) return;
+      const changed =
+        Number(data.today_orders) !== Number(summary.today_orders) ||
+        Number(data.pending_deposit) !== Number(summary.pending_deposit) ||
+        Number(data.ready_pickup) !== Number(summary.ready_pickup);
+      if (changed) setNewOrdersAvailable(true);
+      setSummary(data);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [summary.pending_deposit, summary.ready_pickup, summary.today_orders]);
 
-    function isOutside(target, refs) {
-      return refs.every((ref) => !ref.current?.contains(target));
-    }
-
-    function handleDocumentPointerDown(event) {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      if (
-        schedulePanelOpen &&
-        isOutside(target, [scheduleGearRef, schedulePanelRef])
-      ) {
-        setSchedulePanelOpen(false);
-      }
-
-      if (
-        filterPanelOpen &&
-        isOutside(target, [filterToggleRef, filterPanelRef])
-      ) {
-        if (isDev) {
-          console.debug("[AdminPage] closing filter panel from outside click");
-        }
-        setFilterPanelOpen(false);
-      }
-
-      if (
-        bulkPanelOpen &&
-        isOutside(target, [bulkToggleRef, bulkPanelRef])
-      ) {
-        if (isDev) {
-          console.debug("[AdminPage] closing bulk panel from outside click");
-        }
-        setBulkPanelOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-    };
-  }, [adminUser, adminVerified, bulkPanelOpen, filterPanelOpen, isDev, schedulePanelOpen]);
-
-  useEffect(() => {
-    if (!isDev) {
-      return;
-    }
-
-    console.debug("[AdminPage] toolbar panel visibility", {
-      filterPanelOpen,
-      bulkPanelOpen,
-    });
-  }, [bulkPanelOpen, filterPanelOpen, isDev]);
-
-  async function handleLoginSubmit(event) {
-    event.preventDefault();
-
-    if (!configOk) {
-      setLoginMessage({ text: "請先設定 react-app/public/config.js", type: "error" });
-      return;
-    }
-
-    setLoginMessage({ text: "登入中...", type: "" });
-    const { error } = await signInAdmin(email, password);
-    if (error) {
-      setLoginMessage({ text: "登入失敗，請確認帳號密碼。", type: "error" });
-      return;
-    }
-
-    setPassword("");
-    setLoginMessage({ text: "", type: "" });
-  }
-
-  async function handleGitHubLogin() {
-    if (!configOk) {
-      setLoginMessage({ text: "請先設定 react-app/public/config.js", type: "error" });
-      return;
-    }
-
-    setLoginMessage({ text: "導向 GitHub 登入中...", type: "" });
-    const redirectTo = `${window.location.origin}/admin`;
-    const { error } = await signInAdminWithGitHub(redirectTo);
-    if (error) {
-      setLoginMessage({ text: "GitHub 登入失敗，請稍後再試。", type: "error" });
-    }
-  }
-
-  async function handleSaveSchedule() {
-    setScheduleMessage("儲存中...");
-    const { data, error } = await saveOrderingSchedule(schedule, "admin");
-    if (error) {
-      setScheduleMessage(`儲存失敗：${getErrorText(error, "請稍後再試")}`);
-      return;
-    }
-    if (!data) {
-      setScheduleMessage(await resolveNoDataPermissionMessage("沒有可更新的資料，請重新整理後再試。"));
-      return;
-    }
-    setScheduleMessage("已更新");
-  }
-
-  async function handleSaveOrder(orderId, payload, mode) {
-    const { data, error } = await updateAdminOrder(orderId, payload);
-    if (error) {
-      return { ok: false, message: `儲存失敗：${getErrorText(error, "請稍後再試")}` };
-    }
-    if (!data) {
-      return {
-        ok: false,
-        message: await resolveNoDataPermissionMessage("沒有可更新的訂單，請重新整理後再試。"),
-      };
-    }
-
-    setOrdersEditing(false);
-    setRefreshKey((current) => current + 1);
-
-    return {
-      ok: true,
-      message: mode === "confirm-deposit" ? "已確認訂金，訂單成立" : "已更新",
-    };
-  }
-
-  async function handleBulkApply() {
-    if (!bulkStatus) {
-      setBulkMessage("請先選擇狀態");
-      return;
-    }
-    if (!selectedOrders.length) {
-      setBulkMessage("請先勾選訂單");
-      return;
-    }
-
-    setBulkMessage("更新中...");
-    const { data, error } = await bulkUpdateOrders(selectedOrders, bulkStatus);
-    if (error) {
-      setBulkMessage(`更新失敗：${getErrorText(error, "請稍後再試")}`);
-      return;
-    }
-    if (!Array.isArray(data) || !data.length) {
-      setBulkMessage(await resolveNoDataPermissionMessage("沒有可更新的訂單，請重新整理後再試。"));
-      return;
-    }
-
-    setBulkMessage(`已更新 ${data.length} 筆`);
-    setSelectedOrders([]);
+  function refreshOrders() {
+    setNewOrdersAvailable(false);
     setRefreshKey((current) => current + 1);
   }
 
-  function handleSelectOrder(orderId, checked) {
-    setSelectedOrders((current) => {
-      if (checked) {
-        return Array.from(new Set([...current, orderId]));
-      }
-      return current.filter((id) => id !== orderId);
-    });
+  function setFilter(name, value) {
+    setFilters((current) => ({ ...current, [name]: value }));
+    setPage(1);
+    setSelectedIds([]);
+  }
+
+  function selectSummary(status) {
+    setFilter("status", status);
+    setFiltersOpen(false);
+  }
+
+  function toggleSelectAll(checked) {
     if (checked) {
-      setBulkPanelOpen(true);
+      setSelectedIds((current) => Array.from(new Set([...current, ...orders.map((order) => order.id)])));
+    } else {
+      setSelectedIds((current) => current.filter((id) => !orders.some((order) => order.id === id)));
     }
   }
 
-  function handleSelectAll(checked) {
-    if (checked) {
-      setSelectedOrders((current) => Array.from(new Set([...current, ...visibleIds])));
-      setBulkPanelOpen(true);
+  async function handleBatchAdvance() {
+    if (!batchNextStatus) return;
+    const reason = batchNextStatus === "archived" ? "批次封存已完成訂單" : "批次推進訂單流程";
+    setMessage({ text: "正在更新選取訂單...", type: "" });
+    const { data, error } = await bulkUpdateOrders(selectedIds, batchNextStatus, reason);
+    if (error) {
+      setMessage({ text: `${getAdminError(error)}（已更新 ${data?.length || 0} 筆）`, type: "error" });
+      refreshOrders();
       return;
     }
-    setSelectedOrders((current) => current.filter((id) => !visibleIds.includes(id)));
+    setMessage({ text: `已將 ${data.length} 筆訂單更新為${getAdminStatusLabel(batchNextStatus)}。`, type: "success" });
+    setSelectedIds([]);
+    refreshOrders();
   }
 
-  function handleOrdersBlur() {
-    setTimeout(() => {
-      if (!ordersRef.current?.contains(document.activeElement)) {
-        setOrdersEditing(false);
-      }
-    }, 0);
+  async function handleExport() {
+    setExporting(true);
+    setMessage({ text: "正在整理匯出資料...", type: "" });
+    const { data, error } = await exportAdminOrders(requestFilters);
+    setExporting(false);
+    if (error) {
+      setMessage({ text: getAdminError(error), type: "error" });
+      return;
+    }
+
+    const headers = [
+      "訂單編號", "建立時間", "姓名", "電話", "交貨地點", "訂單狀態", "付款狀態",
+      "總額", "訂金實收", "尾款實收", "待收餘額", "商品", "單價", "數量", "小計", "顧客備註", "內部備註",
+    ];
+    const rows = (data || []).map((row) => [
+      row.order_id,
+      formatDateTime(row.created_at),
+      row.customer_name,
+      row.phone,
+      row.delivery_location,
+      getAdminStatusLabel(row.order_status),
+      paymentStatusLabels[row.payment_status] || row.payment_status,
+      row.total_amount,
+      row.deposit_paid_amount,
+      row.balance_paid_amount,
+      row.outstanding_amount,
+      row.product_name,
+      row.unit_price,
+      row.quantity,
+      row.line_total,
+      row.customer_note,
+      row.admin_note,
+    ]);
+    const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setMessage({ text: `已匯出 ${rows.length} 筆商品明細。`, type: "success" });
   }
 
-  const splitIndex = Math.ceil(orders.length / 2);
-  const leftOrders = orders.slice(0, splitIndex);
-  const rightOrders = orders.slice(splitIndex);
+  function handleOrderUpdated(nextOrder) {
+    const normalized = {
+      ...nextOrder,
+      payment_status: getPaymentStatus(nextOrder),
+      outstanding_amount: Math.max(
+        0,
+        Number(nextOrder.total_amount || 0) -
+          Number(nextOrder.deposit_paid_amount || 0) -
+          Number(nextOrder.balance_paid_amount || 0)
+      ),
+    };
+    setOrders((current) => current.map((order) => (order.id === normalized.id ? normalized : order)));
+    setSelectedOrder(normalized);
+    loadAdminSummary().then(({ data }) => {
+      if (data) setSummary(data);
+    });
+  }
+
+  const topbarActions = (
+    <>
+      <button type="button" className="admin-icon-button" title="重新整理" aria-label="重新整理" disabled={refreshing} onClick={refreshOrders}>
+        <RefreshCw size={19} className={refreshing ? "spin" : ""} />
+      </button>
+      <button type="button" className="admin-secondary-button" disabled={exporting} onClick={handleExport}>
+        <Download size={17} />{exporting ? "匯出中" : "匯出 CSV"}
+      </button>
+    </>
+  );
 
   return (
-    <>
-      <div className="bg-glow"></div>
-      <main className="page admin-page app-shell">
-        <header className="hero">
-          <p className="eyebrow">管理後台</p>
-          <h1>訂購系統後台</h1>
-          <p className="subtitle">請先登入後即可查看訂單與設定開放時段。</p>
-        </header>
+    <AdminLayout title="訂單管理" subtitle={`最後更新：${lastUpdated}`} actions={topbarActions}>
+      <section className="admin-summary-grid" aria-label="營運摘要">
+        <SummaryCard icon={CalendarDays} label="今日新單" value={`${summary.today_orders || 0} 筆`} tone="blue" onClick={() => selectSummary("all")} />
+        <SummaryCard icon={Bell} label="待確認訂金" value={`${summary.pending_deposit || 0} 筆`} tone="red" onClick={() => selectSummary("pending_deposit")} />
+        <SummaryCard icon={PackageCheck} label="待取貨" value={`${summary.ready_pickup || 0} 筆`} tone="green" onClick={() => selectSummary("ready_pickup")} />
+        <SummaryCard icon={WalletCards} label="待收餘額" value={formatCurrency(summary.outstanding_amount || 0)} tone="amber" onClick={() => setFilter("paymentStatus", "unpaid")} />
+      </section>
 
-        {!adminUser || !adminVerified ? (
-          <section className="card" id="loginCard">
-            <form className="stack" onSubmit={handleLoginSubmit}>
-              <label className="field">
-                <span>管理員 Email</span>
-                <input
-                  type="email"
-                  value={email}
-                  placeholder="admin@example.com"
-                  required
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>管理員密碼</span>
-                <input
-                  type="password"
-                  value={password}
-                  required
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </label>
-              <button type="submit" className="primary">
-                Email 登入
+      {newOrdersAvailable ? (
+        <button type="button" className="admin-new-order-alert" onClick={refreshOrders}>
+          <Bell size={17} />訂單資料已有更新，點擊載入最新內容
+        </button>
+      ) : null}
+
+      <section className="admin-order-workspace">
+        <div className="admin-order-toolbar">
+          <label className="admin-search-box">
+            <Search size={18} aria-hidden="true" />
+            <input
+              type="search"
+              value={searchText}
+              placeholder="搜尋訂單編號、姓名、電話或商品"
+              aria-label="搜尋訂單"
+              onChange={(event) => setSearchText(event.target.value)}
+            />
+          </label>
+          <button type="button" className={`admin-filter-button${filtersOpen ? " active" : ""}`} onClick={() => setFiltersOpen((current) => !current)}>
+            <Filter size={17} />篩選
+          </button>
+        </div>
+
+        <div className="admin-status-tabs" role="tablist" aria-label="訂單狀態">
+          <StatusTab value="all" label="全部" active={filters.status} onClick={selectSummary} />
+          {adminStatusOrder.map((value) => (
+            <StatusTab key={value} value={value} label={adminStatusLabels[value]} active={filters.status} onClick={selectSummary} />
+          ))}
+        </div>
+
+        {filtersOpen ? (
+          <div className="admin-filter-panel">
+            <FilterSelect label="付款狀態" value={filters.paymentStatus} onChange={(value) => setFilter("paymentStatus", value)} options={[
+              ["all", "全部付款狀態"], ["needs_review", "待補登"], ["unpaid", "未付款"], ["deposit_paid", "已付訂金"], ["paid", "已付清"],
+            ]} />
+            <FilterSelect label="交貨地點" value={filters.location} onChange={(value) => setFilter("location", value)} options={[["all", "全部地點"], ...locations.map((location) => [location, location])]} />
+            <label className="admin-field"><span>開始日期</span><input type="date" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} /></label>
+            <label className="admin-field"><span>結束日期</span><input type="date" value={filters.dateTo} onChange={(event) => setFilter("dateTo", event.target.value)} /></label>
+            <button type="button" className="admin-text-button" onClick={() => { setFilters(initialFilters); setPage(1); }}>清除篩選</button>
+          </div>
+        ) : null}
+
+        {selectedIds.length ? (
+          <div className="admin-bulk-bar">
+            <strong>已選 {selectedIds.length} 筆</strong>
+            {batchNextStatus ? (
+              <button type="button" className="admin-primary-button" onClick={handleBatchAdvance}>
+                批次移至{getAdminStatusLabel(batchNextStatus)}
               </button>
-              <button type="button" className="ghost" onClick={handleGitHubLogin}>
-                GitHub 登入
-              </button>
-              <FormMessage text={loginMessage.text} type={loginMessage.type} />
-            </form>
-          </section>
-        ) : (
-          <>
-            <button
-              ref={scheduleGearRef}
-              type="button"
-              className={`schedule-gear${adminUser ? "" : " hidden"}`}
-              aria-label="開放時間設定"
-              onClick={() => setSchedulePanelOpen((current) => !current)}
-            >
-              ⚙
-            </button>
+            ) : (
+              <span>所選訂單階段不同，請選擇相同狀態的訂單。</span>
+            )}
+            <button type="button" className="admin-text-button" onClick={() => setSelectedIds([])}>取消選取</button>
+          </div>
+        ) : null}
 
-            <section
-              ref={schedulePanelRef}
-              className={`card schedule-panel${schedulePanelOpen ? "" : " hidden"}`}
-              id="adminPanel"
-            >
-              <div className="panel-header">
-                <div>
-                  <h2>開放時間設定</h2>
-                  <p className="muted">關閉時間會視為該小時的 59 分。</p>
-                </div>
-                <button type="button" className="ghost" onClick={signOut}>
-                  登出
-                </button>
-              </div>
-              <div className="grid schedule-grid">
-                <label className="field checkbox-field">
-                  <span>永遠開放</span>
-                  <input
-                    type="checkbox"
-                    checked={schedule.is_always_open}
-                    onChange={(event) =>
-                      setSchedule((current) => ({
-                        ...current,
-                        is_always_open: event.target.checked,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>開放星期</span>
-                  <select
-                    value={schedule.open_day}
-                    disabled={schedule.is_always_open}
-                    onChange={(event) =>
-                      setSchedule((current) => ({
-                        ...current,
-                        open_day: Number(event.target.value),
-                      }))
-                    }
-                  >
-                    {weekdayLabels.map((label, index) => (
-                      <option key={`open-day-${label}`} value={index}>
-                        週{label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>開放時間</span>
-                  <select
-                    value={schedule.open_hour}
-                    disabled={schedule.is_always_open}
-                    onChange={(event) =>
-                      setSchedule((current) => ({
-                        ...current,
-                        open_hour: Number(event.target.value),
-                      }))
-                    }
-                  >
-                    {Array.from({ length: 24 }, (_, index) => (
-                      <option key={`open-hour-${index}`} value={index}>
-                        {String(index).padStart(2, "0")}:00
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>關閉星期</span>
-                  <select
-                    value={schedule.close_day}
-                    disabled={schedule.is_always_open}
-                    onChange={(event) =>
-                      setSchedule((current) => ({
-                        ...current,
-                        close_day: Number(event.target.value),
-                      }))
-                    }
-                  >
-                    {weekdayLabels.map((label, index) => (
-                      <option key={`close-day-${label}`} value={index}>
-                        週{label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>關閉時間</span>
-                  <select
-                    value={schedule.close_hour}
-                    disabled={schedule.is_always_open}
-                    onChange={(event) =>
-                      setSchedule((current) => ({
-                        ...current,
-                        close_hour: Number(event.target.value),
-                      }))
-                    }
-                  >
-                    {Array.from({ length: 24 }, (_, index) => (
-                      <option key={`close-hour-${index}`} value={index}>
-                        {String(index).padStart(2, "0")}:00
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="actions">
-                <button type="button" className="primary" onClick={handleSaveSchedule}>
-                  儲存設定
-                </button>
-                <span className="muted">{scheduleMessage}</span>
-              </div>
-            </section>
+        {message.text ? <div className={`admin-page-message ${message.type}`}>{message.text}</div> : null}
 
-            <section className="card" id="ordersPanel">
-              <div className="panel-header">
-                <div>
-                  <h2>訂單清單</h2>
-                  <p className="muted">最後更新：{lastUpdated}</p>
-                </div>
-                <div className="actions admin-top-actions">
-                  <button type="button" className="ghost" onClick={() => setRefreshKey((current) => current + 1)}>
-                    重新整理
-                  </button>
-                  <button type="button" className="ghost" onClick={signOut}>
-                    登出
-                  </button>
-                </div>
-              </div>
-              <div className="order-toolbar-controls">
-                <button
-                  ref={filterToggleRef}
-                  type="button"
-                  className={`ghost toolbar-toggle-btn${filterPanelOpen ? " active" : ""}`}
-                  aria-expanded={filterPanelOpen}
-                  onClick={() => setFilterPanelOpen((current) => !current)}
-                >
-                  ⚙ 篩選
-                </button>
-                <button
-                  ref={bulkToggleRef}
-                  type="button"
-                  className={`ghost toolbar-toggle-btn${bulkPanelOpen ? " active" : ""}`}
-                  aria-expanded={bulkPanelOpen}
-                  onClick={() => setBulkPanelOpen((current) => !current)}
-                >
-                  ⚙ 批次
-                </button>
-              </div>
-              <div className="order-toolbar-panels">
-                <div
-                  ref={filterPanelRef}
-                  className={filterPanelOpen ? "order-filters toolbar-box" : "order-filters hidden"}
-                >
-                  <p className="toolbar-title">篩選條件</p>
-                  <label className="field">
-                    <span>狀態</span>
-                    <select
-                      value={filters.status}
-                      onChange={(event) => {
-                        setCurrentPage(1);
-                        setSelectedOrders([]);
-                        setFilters((current) => ({ ...current, status: event.target.value }));
-                      }}
-                    >
-                      <option value="pending_deposit">待確認訂金</option>
-                      <option value="open">進行中</option>
-                      <option value="fulfilled">已完成</option>
-                      <option value="archived">歷史紀錄</option>
-                      <option value="all">全部</option>
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>地點</span>
-                    <select
-                      value={filters.location}
-                      onChange={(event) => {
-                        setCurrentPage(1);
-                        setSelectedOrders([]);
-                        setFilters((current) => ({ ...current, location: event.target.value }));
-                      }}
-                    >
-                      <option value="all">全部地點</option>
-                      {locationOptions.map((location) => (
-                        <option key={location} value={location}>
-                          {location}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field time-field">
-                    <span>時間</span>
-                    <div className="time-selects">
-                      <select
-                        value={filters.year}
-                        onChange={(event) => {
-                          setCurrentPage(1);
-                          setSelectedOrders([]);
-                          setFilters((current) => ({ ...current, year: event.target.value }));
-                        }}
-                      >
-                        {yearOptions.map((year) => (
-                          <option key={`year-${year}`} value={year}>
-                            {year === "all" ? "全部年" : year}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={filters.month}
-                        onChange={(event) => {
-                          setCurrentPage(1);
-                          setSelectedOrders([]);
-                          setFilters((current) => ({ ...current, month: event.target.value }));
-                        }}
-                      >
-                        {monthOptions.map((month) => (
-                          <option key={`month-${month}`} value={month}>
-                            {month === "all" ? "全部月" : `${month}月`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </label>
-                </div>
+        <div className="admin-order-list-head">
+          <label><input type="checkbox" checked={allVisibleSelected} onChange={(event) => toggleSelectAll(event.target.checked)} aria-label="全選本頁" /></label>
+          <span>訂單／顧客</span><span>交貨資訊</span><span>付款</span><span>總額</span><span>狀態</span><span />
+        </div>
 
-                <div
-                  ref={bulkPanelRef}
-                  className={bulkPanelOpen ? "bulk-actions toolbar-box" : "bulk-actions hidden"}
-                >
-                  <p className="toolbar-title">批次操作</p>
-                  <label className="checkbox-inline select-all-pill">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={(event) => handleSelectAll(event.target.checked)}
-                    />
-                    全選本頁
-                  </label>
-                  <span className="selected-pill">已選 {selectedOrders.length} 筆</span>
-                  <label className="field bulk-field">
-                    <span>批次狀態</span>
-                    <select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value)}>
-                      <option value="">選擇狀態</option>
-                      {Object.entries(statusLabels).map(([value, label]) => (
-                        <option key={`bulk-${value}`} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button type="button" className="primary bulk-apply-btn" onClick={handleBulkApply}>
-                    套用
-                  </button>
-                  <span className="muted bulk-message">{bulkMessage}</span>
-                </div>
-              </div>
+        <div className="admin-order-list" aria-busy={loading}>
+          {loading ? <div className="admin-loading-state">正在載入訂單...</div> : null}
+          {!loading && !orders.length ? <div className="admin-empty-state"><strong>找不到符合條件的訂單</strong><span>請調整搜尋或篩選條件。</span></div> : null}
+          {!loading ? orders.map((order) => (
+            <AdminOrderRow
+              key={order.id}
+              order={order}
+              selected={selectedIds.includes(order.id)}
+              onSelect={(checked) => setSelectedIds((current) => checked ? Array.from(new Set([...current, order.id])) : current.filter((id) => id !== order.id))}
+              onOpen={() => setSelectedOrder(order)}
+            />
+          )) : null}
+        </div>
 
-              <div
-                ref={ordersRef}
-                className="orders"
-                onFocusCapture={() => setOrdersEditing(true)}
-                onBlurCapture={handleOrdersBlur}
-              >
-                {!orders.length ? <p className="muted">目前沒有訂單。</p> : null}
-                {orders.length ? (
-                  <div
-                    className="orders-two-column"
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: window.innerWidth <= 520 ? "1fr" : "1fr 1fr",
-                      gap: "12px",
-                    }}
-                  >
-                    <div className="orders-column" style={{ display: "grid", gap: "12px", alignContent: "start" }}>
-                      {leftOrders.map((order) => (
-                        <AdminOrderCard
-                          key={order.id}
-                          order={order}
-                          selected={selectedOrders.includes(order.id)}
-                          statusLabels={statusLabels}
-                          onSelectedChange={handleSelectOrder}
-                          onSave={handleSaveOrder}
-                        />
-                      ))}
-                    </div>
-                    <div className="orders-column" style={{ display: "grid", gap: "12px", alignContent: "start" }}>
-                      {rightOrders.map((order) => (
-                        <AdminOrderCard
-                          key={order.id}
-                          order={order}
-                          selected={selectedOrders.includes(order.id)}
-                          statusLabels={statusLabels}
-                          onSelectedChange={handleSelectOrder}
-                          onSave={handleSaveOrder}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+        <div className="admin-pagination">
+          <span>共 {totalOrders} 筆，第 {page} / {totalPages} 頁</span>
+          <div>
+            <button type="button" className="admin-icon-button" aria-label="上一頁" title="上一頁" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={18} /></button>
+            <button type="button" className="admin-icon-button" aria-label="下一頁" title="下一頁" disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}><ChevronRight size={18} /></button>
+          </div>
+        </div>
+      </section>
 
-              <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={currentPage <= 1}
-                  onClick={() => {
-                    setSelectedOrders([]);
-                    setCurrentPage((current) => Math.max(1, current - 1));
-                  }}
-                >
-                  上一頁
-                </button>
-                <span className="muted">
-                  第 {currentPage} / {totalPages} 頁（共 {totalOrders} 筆）
-                </span>
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => {
-                    setSelectedOrders([]);
-                    setCurrentPage((current) => Math.min(totalPages, current + 1));
-                  }}
-                >
-                  下一頁
-                </button>
-              </div>
-            </section>
-          </>
-        )}
-      </main>
-    </>
+      {selectedOrder ? (
+        <AdminOrderDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} onUpdated={handleOrderUpdated} />
+      ) : null}
+    </AdminLayout>
+  );
+}
+
+function SummaryCard({ icon: Icon, label, value, tone, onClick }) {
+  return (
+    <button type="button" className={`admin-summary-card ${tone}`} onClick={onClick}>
+      <span className="admin-summary-icon"><Icon size={20} /></span>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </button>
+  );
+}
+
+function StatusTab({ value, label, active, onClick }) {
+  return <button type="button" role="tab" aria-selected={active === value} className={active === value ? "active" : ""} onClick={() => onClick(value)}>{label}</button>;
+}
+
+function FilterSelect({ label, value, options, onChange }) {
+  return (
+    <label className="admin-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function AdminOrderRow({ order, selected, onSelect, onOpen }) {
+  const quantity = (order.order_items || []).reduce((sum, item) => sum + Math.max(1, Number(item.quantity) || 1), 0);
+  const paymentStatus = order.payment_status || getPaymentStatus(order);
+  return (
+    <article className={`admin-order-row${selected ? " selected" : ""}`}>
+      <label className="admin-row-check"><input type="checkbox" checked={selected} onChange={(event) => onSelect(event.target.checked)} aria-label={`選取訂單 ${order.id.slice(0, 8)}`} /></label>
+      <button type="button" className="admin-order-row-main" onClick={onOpen}>
+        <div className="admin-order-identity">
+          <strong>{order.customer_name}</strong>
+          <span>#{order.id.slice(0, 8)} · {formatDateTime(order.created_at)}</span>
+        </div>
+        <div className="admin-order-delivery"><strong>{order.delivery_location}</strong><span>{quantity} 件商品 · {order.phone}</span></div>
+        <div><span className={`admin-payment-badge payment-${paymentStatus}`}>{paymentStatusLabels[paymentStatus]}</span></div>
+        <strong className="admin-row-total">{formatCurrency(order.total_amount)}</strong>
+        <div><span className={`admin-status-badge status-${order.status}`}>{getAdminStatusLabel(order.status)}</span></div>
+        <ChevronRight size={18} className="admin-row-chevron" />
+      </button>
+    </article>
   );
 }
