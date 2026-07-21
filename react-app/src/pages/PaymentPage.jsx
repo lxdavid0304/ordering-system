@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
+import { memberSupabase } from "../lib/supabase";
 import {
   calculateDepositAmount,
   calculateOrderAmounts,
@@ -11,8 +12,8 @@ import {
   normalizeAmount,
 } from "../utils/orders";
 import { formatCurrency, formatDateTime } from "../utils/format";
-import { readPaymentPreview, saveOrderDraft, savePaymentPreview } from "../utils/storage";
-import { setOrderPaymentMethod } from "../services/orderService";
+import { clearOrderDraft, readPaymentPreview, saveOrderDraft, savePaymentPreview } from "../utils/storage";
+import { invokeFunction, setOrderPaymentMethod } from "../services/orderService";
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -90,6 +91,55 @@ export default function PaymentPage() {
     }
 
     setSaving(true);
+    if (!preview.order_id) {
+      setMessage({ text: "正在建立訂單並儲存付款方式...", type: "" });
+      const { data: sessionData, error: sessionError } = await memberSupabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || "";
+      if (sessionError || !accessToken) {
+        setSaving(false);
+        setMessage({ text: "登入狀態已失效，請重新登入後再確認付款方式。", type: "error" });
+        return;
+      }
+
+      const idempotencyKey = preview.idempotency_key || crypto.randomUUID();
+      const { data, error } = await invokeFunction("create-order", {
+        delivery_location: preview.delivery_location,
+        note: preview.note || "",
+        items: Array.isArray(preview.order_items) ? preview.order_items : [],
+        device_id: preview.device_id || "payment-page",
+        idempotency_key: idempotencyKey,
+        payment_method: selectedMethod,
+        access_token: accessToken,
+      });
+
+      if (error || !data?.order_id) {
+        setSaving(false);
+        setMessage({
+          text:
+            error?.code === "CATALOG_PRICE_CHANGED"
+              ? "商品價格已更新，請回填單頁重新確認後再送出。"
+              : error?.code === "CATALOG_UNAVAILABLE"
+                ? "部分商品已下架，請回填單頁調整商品後再送出。"
+                : `訂單建立失敗：${error?.message || "請稍後再試。"}`,
+          type: "error",
+        });
+        return;
+      }
+
+      savePaymentPreview({
+        ...preview,
+        order_id: data.order_id,
+        idempotency_key: idempotencyKey,
+        payment_method: selectedMethod,
+        payment_selection_submitted_at: new Date().toISOString(),
+      });
+      if (user?.id) {
+        clearOrderDraft(user.id);
+      }
+      setSaving(false);
+      navigate("/pending-order", { replace: true });
+      return;
+    }
     setMessage({ text: "正在儲存付款方式...", type: "" });
     const { error } = await setOrderPaymentMethod(preview.order_id, selectedMethod);
     if (error) {
@@ -199,7 +249,7 @@ export default function PaymentPage() {
                 <span className="payment-choice-copy">
                   <span className="payment-choice-title">
                     <strong>轉帳付款</strong>
-                    <small>{needsDeposit ? "50% 訂金" : "全額付款"}</small>
+                    <small>事先支付</small>
                   </span>
                   <span className="payment-choice-description">
                     {needsDeposit

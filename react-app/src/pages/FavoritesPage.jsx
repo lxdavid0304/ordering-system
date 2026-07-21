@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Package, Plus, Search, ShoppingCart, X } from "lucide-react";
+import { Package, Plus, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import FavoriteToggleButton from "../components/FavoriteToggleButton";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
@@ -132,6 +131,10 @@ export default function FavoritesPage() {
   }
 
   async function handleDelete(favorite) {
+    if (!window.confirm(`確定要移除「${favorite.product_name}」嗎？`)) {
+      return;
+    }
+
     setDeletingId(favorite.id);
     const { error } = await deleteFavoriteItem(favorite.id);
     if (error) {
@@ -163,6 +166,7 @@ export default function FavoritesPage() {
           product_name: product?.display_name || favorite.product_name || "",
           unit_price: Number(product?.unit_price ?? favorite.unit_price ?? 0),
           quantity,
+          shipping_fee_per_unit: Number(product?.shipping_fee_per_unit ?? 20),
           ...(product?.id ? { catalog_product_id: product.id } : {}),
         },
       ],
@@ -224,25 +228,29 @@ export default function FavoritesPage() {
             const unitPrice = Number(product?.unit_price ?? favorite.unit_price ?? 0);
             const quantity = quantities[favorite.id] || 1;
             return (
-              <article key={favorite.id} className="favorites-product-card">
-                <div className="favorites-product-media">
-                  {product?.image_url ? (
+              <article key={favorite.id} className={`favorites-product-card${product?.image_url ? " has-image" : ""}`}>
+                {product?.image_url ? (
+                  <div className="favorites-product-media">
                     <img src={product.image_url} alt="" loading="lazy" decoding="async" />
-                  ) : (
-                    <Package size={34} aria-hidden="true" />
-                  )}
-                  <FavoriteToggleButton
-                    active
-                    busy={deletingId === favorite.id}
-                    label={favorite.product_name}
-                    onClick={() => handleDelete(favorite)}
-                  />
-                </div>
+                  </div>
+                ) : null}
                 <div className="favorites-product-body">
-                  <div>
+                  <div className="favorites-product-head">
+                    <div>
                     {product?.category ? <span className="favorites-product-category">{product.category}</span> : null}
                     <h3>{favorite.product_name}</h3>
                     {favorite.note ? <p>{favorite.note}</p> : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="favorites-delete-button"
+                      disabled={deletingId === favorite.id}
+                      aria-label={`移除常用商品：${favorite.product_name}`}
+                      title="移除常用商品"
+                      onClick={() => handleDelete(favorite)}
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
                   </div>
                   <div className="favorites-product-price">
                     <span>{product ? "最新代購價" : "預估單價"}</span>
@@ -254,9 +262,14 @@ export default function FavoritesPage() {
                       <input type="number" min="1" value={quantity} onChange={(event) => updateQuantity(favorite.id, event.target.value)} aria-label={`${favorite.product_name}數量`} />
                       <button type="button" onClick={() => updateQuantity(favorite.id, quantity + 1)} aria-label="增加數量">+</button>
                     </div>
-                    <button type="button" className="primary favorites-use-button" onClick={() => handleUseFavorite(favorite)}>
+                    <button
+                      type="button"
+                      className="primary favorites-use-button"
+                      aria-label={`將 ${favorite.product_name} 加入填單`}
+                      title="加入填單"
+                      onClick={() => handleUseFavorite(favorite)}
+                    >
                       <ShoppingCart size={16} aria-hidden="true" />
-                      加入填單
                     </button>
                   </div>
                 </div>

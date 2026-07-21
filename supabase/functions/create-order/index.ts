@@ -61,6 +61,8 @@ type CatalogProduct = {
   category: string;
   unit_price_min: number | null;
   unit_price: number;
+  cost_price: number;
+  shipping_fee_per_unit: number;
   is_active: boolean;
 };
 
@@ -73,6 +75,7 @@ function mapCatalogProduct(product: CatalogProduct) {
     category: product.category,
     unit_price_min: product.unit_price_min,
     unit_price: product.unit_price,
+    shipping_fee_per_unit: product.shipping_fee_per_unit,
     display_name: displayName,
   };
 }
@@ -119,6 +122,107 @@ function getCurrentBatchId() {
     return getIsoWeekIdFromDate(new Date());
   }
   return getIsoWeekId(parts);
+}
+
+async function queueInitialStatusNotification(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceKey: string,
+  orderId: string,
+  userId: string,
+  status: unknown
+) {
+  const { data: orderSnapshot, error: orderSnapshotError } = await supabase
+    .from("orders")
+    .select("delivery_location, total_amount, quoted_total_amount, deposit_paid_amount, balance_paid_amount")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (orderSnapshotError || !orderSnapshot) {
+    console.error("Unable to load created order for LINE notification", orderSnapshotError);
+    return;
+  }
+
+  const { data: existingJobs, error: existingJobError } = await supabase
+    .from("line_notification_jobs")
+    .select("id, status, payload")
+    .eq("order_id", orderId)
+    .eq("event_type", "order_status_changed");
+
+  if (existingJobError) {
+    console.error("Unable to check LINE notification queue", existingJobError);
+    return;
+  }
+
+  // Older database fallback logic could enqueue an insert-time snapshot before
+  // create_order had calculated the real total. Never send that zero-value draft.
+  const zeroValueJobs = (existingJobs || []).filter((job) => {
+    const payload = job.payload && typeof job.payload === "object"
+      ? job.payload as Record<string, unknown>
+      : {};
+    return Number(orderSnapshot.total_amount) > 0
+      && Object.prototype.hasOwnProperty.call(payload, "total_amount")
+      && Number(payload.total_amount) === 0
+      && job.status !== "sent";
+  });
+  if (zeroValueJobs.length) {
+    await supabase
+      .from("line_notification_jobs")
+      .update({
+        status: "skipped",
+        error_message: "Superseded zero-value order draft",
+        claim_token: null,
+        processing_started_at: null,
+        next_attempt_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", zeroValueJobs.map((job) => job.id));
+  }
+
+  const existingJob = (existingJobs || []).find((job) => !zeroValueJobs.some((zeroJob) => zeroJob.id === job.id));
+  if (!existingJob) {
+    const { error: queueError } = await supabase.from("line_notification_jobs").insert({
+      order_id: orderId,
+      user_id: userId,
+      event_type: "order_status_changed",
+      payload: {
+        from_status: null,
+        to_status: String(status || "pending_deposit"),
+        delivery_location: orderSnapshot?.delivery_location ?? null,
+        total_amount: orderSnapshot?.total_amount ?? null,
+        quoted_total_amount: orderSnapshot?.quoted_total_amount ?? null,
+        deposit_paid_amount: orderSnapshot?.deposit_paid_amount ?? 0,
+        balance_paid_amount: orderSnapshot?.balance_paid_amount ?? 0,
+        price_adjusted: false,
+      },
+    });
+    if (queueError) {
+      console.error("Unable to queue initial LINE notification", queueError);
+      return;
+    }
+  }
+
+  const workerToken = Deno.env.get("LINE_NOTIFICATION_WORKER_TOKEN");
+  if (!workerToken) {
+    console.error("LINE_NOTIFICATION_WORKER_TOKEN is not configured");
+    return;
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/line-notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-notification-worker-token": workerToken,
+      },
+      body: JSON.stringify({ order_id: orderId, target_status: String(status || "pending_deposit") }),
+    });
+    if (!response.ok) {
+      console.error("Unable to deliver initial LINE notification", await response.text());
+    }
+  } catch (error) {
+    console.error("Unable to reach LINE notification worker", error);
+  }
 }
 
 serve(async (req) => {
@@ -170,9 +274,14 @@ serve(async (req) => {
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const deviceId = sanitizeText(payload?.device_id, 80);
   const idempotencyKey = sanitizeText(payload?.idempotency_key, 80);
+  const paymentMethod = sanitizeText(payload?.payment_method, 20);
 
-  if (!deliveryLocation || !deviceId || !idempotencyKey) {
+  if (!deliveryLocation || !deviceId || !idempotencyKey || !paymentMethod) {
     return jsonResponse({ error: "Missing required fields" }, 400);
+  }
+
+  if (paymentMethod !== "cash" && paymentMethod !== "transfer") {
+    return jsonResponse({ error: "Invalid payment method" }, 400);
   }
 
   if (items.length === 0) {
@@ -242,19 +351,20 @@ serve(async (req) => {
     new Set(catalogItems.map((item) => item.catalog_product_id).filter(Boolean))
   ) as string[];
 
+  const catalogMap = new Map<string, CatalogProduct>();
   if (catalogIds.length) {
     const { data: catalogData, error: catalogError } = await supabase
       .from("popular_products")
-      .select("id, product_name, specification, category, unit_price_min, unit_price, is_active")
+      .select("id, product_name, specification, category, unit_price_min, unit_price, cost_price, shipping_fee_per_unit, is_active")
       .in("id", catalogIds);
 
     if (catalogError) {
       return jsonResponse({ error: "Catalog validation failed" }, 500);
     }
 
-    const catalogMap = new Map(
-      ((catalogData || []) as CatalogProduct[]).map((product) => [product.id, product])
-    );
+    ((catalogData || []) as CatalogProduct[]).forEach((product) => {
+      catalogMap.set(product.id, product);
+    });
     const unavailableIds = catalogIds.filter((id) => !catalogMap.get(id)?.is_active);
     if (unavailableIds.length) {
       return jsonResponse(
@@ -286,6 +396,17 @@ serve(async (req) => {
     }
   }
 
+  const requestedTotal = cleanedItems.reduce((sum, item) => {
+    const catalogProduct = item.catalog_product_id
+      ? catalogMap.get(item.catalog_product_id)
+      : null;
+    const shippingFeePerUnit = catalogProduct ? 0 : 20;
+    return sum + item.unit_price * item.quantity + item.quantity * shippingFeePerUnit;
+  }, 0);
+  if (requestedTotal > 300 && paymentMethod !== "transfer") {
+    return jsonResponse({ error: "Transfer payment is required for this order" }, 400);
+  }
+
   const { data: openNow, error: openError } = await supabase.rpc("ordering_open_now");
   if (openError) {
     return jsonResponse({ error: "Schedule check failed" }, 500);
@@ -309,7 +430,7 @@ serve(async (req) => {
       const { data: latestCatalog } = catalogIds.length
         ? await supabase
             .from("popular_products")
-            .select("id, product_name, specification, category, unit_price_min, unit_price, is_active")
+            .select("id, product_name, specification, category, unit_price_min, unit_price, cost_price, shipping_fee_per_unit, is_active")
             .in("id", catalogIds)
         : { data: [] };
       const latestMap = new Map(
@@ -343,7 +464,7 @@ serve(async (req) => {
   const { data: savedOrder, error: savedOrderError } = await supabase
     .from("orders")
     .select(
-      "id, total_amount, status, order_items(product_name, unit_price, quantity, line_total)"
+      "id, total_amount, shipping_amount, status, order_items(product_name, unit_price, quantity, line_total, catalog_product_id, shipping_fee_per_unit)"
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -352,15 +473,33 @@ serve(async (req) => {
     return jsonResponse({ error: "Order created but could not be reloaded" }, 500);
   }
 
+  const { error: paymentMethodError } = await supabase
+    .from("orders")
+    .update({
+      selected_payment_method: paymentMethod,
+      payment_selected_at: new Date().toISOString(),
+    })
+    .eq("id", savedOrder.id)
+    .eq("user_id", userId);
+  if (paymentMethodError) {
+    return jsonResponse({ error: "Order created but payment method could not be saved" }, 500);
+  }
+
+  await queueInitialStatusNotification(
+    supabase,
+    supabaseUrl,
+    serviceKey,
+    savedOrder.id,
+    userId,
+    savedOrder.status
+  );
+
   const acceptedItems = Array.isArray(savedOrder.order_items) ? savedOrder.order_items : [];
   const itemsTotal = acceptedItems.reduce(
     (sum, item) => sum + Number(item.line_total || 0),
     0
   );
-  const shippingAmount = acceptedItems.reduce(
-    (sum, item) => sum + Math.max(1, Number(item.quantity) || 1) * 20,
-    0
-  );
+  const shippingAmount = Number(savedOrder.shipping_amount || 0);
 
   return jsonResponse(
     {

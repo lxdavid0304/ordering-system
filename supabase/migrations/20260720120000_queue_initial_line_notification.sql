@@ -1,0 +1,2 @@
+-- Initial notifications are queued by create-order only after it calculates
+-- the final total. Do not use an INSERT trigger because orders start at zero.

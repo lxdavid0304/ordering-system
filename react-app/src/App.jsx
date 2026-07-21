@@ -3,6 +3,7 @@ import AdminProtectedRoute from "./components/AdminProtectedRoute";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminPage from "./pages/AdminPage";
 import AdminProductsPage from "./pages/AdminProductsPage";
+import AdminReportsPage from "./pages/AdminReportsPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import FavoritesPage from "./pages/FavoritesPage";
@@ -80,6 +81,14 @@ export default function App() {
         element={
           <AdminProtectedRoute>
             <AdminProductsPage />
+          </AdminProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports"
+        element={
+          <AdminProtectedRoute>
+            <AdminReportsPage />
           </AdminProtectedRoute>
         }
       />

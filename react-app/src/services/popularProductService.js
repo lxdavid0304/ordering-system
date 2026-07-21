@@ -4,7 +4,7 @@ export const POPULAR_PRODUCT_BUCKET = "popular-products";
 export const POPULAR_PRODUCT_MAX_FILE_SIZE = 5 * 1024 * 1024;
 export const POPULAR_PRODUCT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const PUBLIC_FIELDS =
-  "id, product_name, specification, category, unit_price_min, unit_price, image_path, costco_url, is_active, sort_order, updated_at";
+  "id, product_name, specification, category, unit_price_min, unit_price, cost_price_min, cost_price, shipping_fee_per_unit, image_path, costco_url, is_active, sort_order, updated_at";
 const ADMIN_FIELDS = `${PUBLIC_FIELDS}, created_at`;
 const LEGACY_PUBLIC_FIELDS =
   "id, product_name, specification, category, unit_price, image_path, is_active, sort_order, updated_at";
@@ -15,6 +15,14 @@ function isMissingCostcoUrlColumn(error) {
     error &&
       (error.code === "PGRST204" || error.code === "42703") &&
       String(error.message || "").includes("costco_url")
+  );
+}
+
+function isMissingShippingFeeColumn(error) {
+  return Boolean(
+    error &&
+      (error.code === "PGRST204" || error.code === "42703") &&
+      String(error.message || "").includes("shipping_fee_per_unit")
   );
 }
 
@@ -44,6 +52,18 @@ function buildImageUrl(client, imagePath) {
 function mapProduct(client, product) {
   return {
     ...product,
+    shipping_fee_per_unit:
+      product.shipping_fee_per_unit === null || product.shipping_fee_per_unit === undefined
+        ? 20
+        : Math.max(0, Math.floor(Number(product.shipping_fee_per_unit) || 0)),
+    cost_price:
+      product.cost_price === null || product.cost_price === undefined
+        ? Math.max(0, Math.floor(Number(product.unit_price) || 0))
+        : Math.max(0, Math.floor(Number(product.cost_price) || 0)),
+    cost_price_min:
+      product.cost_price_min === null || product.cost_price_min === undefined
+        ? null
+        : Math.max(0, Math.floor(Number(product.cost_price_min) || 0)),
     costco_url: product.costco_url || "",
     image_url: buildImageUrl(client, product.image_path),
     display_name: [product.product_name, product.specification].filter(Boolean).join(" "),
@@ -66,7 +86,7 @@ export async function loadActivePopularProducts() {
     .order("sort_order", { ascending: true })
     .order("updated_at", { ascending: false });
 
-  if (isMissingCostcoUrlColumn(result.error)) {
+  if (isMissingCostcoUrlColumn(result.error) || isMissingShippingFeeColumn(result.error)) {
     result = await memberSupabase
       .from("popular_products")
       .select(LEGACY_PUBLIC_FIELDS)
@@ -92,7 +112,7 @@ export async function loadAdminPopularProducts() {
     .order("sort_order", { ascending: true })
     .order("updated_at", { ascending: false });
 
-  if (isMissingCostcoUrlColumn(result.error)) {
+  if (isMissingCostcoUrlColumn(result.error) || isMissingShippingFeeColumn(result.error)) {
     result = await adminSupabase
       .from("popular_products")
       .select(LEGACY_ADMIN_FIELDS)
@@ -125,6 +145,20 @@ export async function savePopularProduct(product) {
         ? null
         : Math.max(0, Math.floor(Number(product.unit_price_min) || 0)),
     unit_price: Math.max(0, Math.floor(Number(product.unit_price) || 0)),
+    cost_price_min:
+      product.cost_price_min === null ||
+      product.cost_price_min === undefined ||
+      String(product.cost_price_min).trim() === ""
+        ? null
+        : Math.max(0, Math.floor(Number(product.cost_price_min) || 0)),
+    cost_price: Math.max(
+      0,
+      Math.floor(Number(product.cost_price ?? product.unit_price) || 0)
+    ),
+    shipping_fee_per_unit: Math.max(
+      0,
+      Math.floor(Number(product.shipping_fee_per_unit ?? 20) || 0)
+    ),
     image_path: String(product.image_path || "").trim(),
     costco_url: costcoUrl || null,
     is_active: Boolean(product.is_active),
@@ -137,6 +171,9 @@ export async function savePopularProduct(product) {
   if (payload.unit_price_min !== null && payload.unit_price_min > payload.unit_price) {
     return { data: null, error: new Error("最低預估價不可高於最高預估價。") };
   }
+  if (payload.cost_price_min !== null && payload.cost_price_min > payload.cost_price) {
+    return { data: null, error: new Error("最低成本不可高於最高成本。") };
+  }
 
   const { data, error } = await adminSupabase
     .from("popular_products")
@@ -144,7 +181,7 @@ export async function savePopularProduct(product) {
     .select(ADMIN_FIELDS)
     .single();
 
-  if (isMissingCostcoUrlColumn(error)) {
+  if (isMissingCostcoUrlColumn(error) || isMissingShippingFeeColumn(error)) {
     return {
       data: null,
       error: new Error("請先執行 popular_product_costco_url migration，再儲存 Costco 連結。"),

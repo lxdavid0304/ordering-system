@@ -15,13 +15,14 @@ import AdminLayout from "../components/AdminLayout";
 import AdminOrderDrawer from "../components/AdminOrderDrawer";
 import {
   bulkUpdateOrders,
+  drainLineNotifications,
   exportAdminOrders,
   loadAdminOrders,
   loadAdminSummary,
 } from "../services/adminService";
 import {
   adminStatusLabels,
-  adminStatusOrder,
+  adminStatusTabs,
   getAdminStatusLabel,
   getNextAdminStatus,
   getPaymentStatus,
@@ -33,11 +34,20 @@ const pageSize = 12;
 const locations = ["明德樓", "據德樓", "蘊德樓", "機車停車場"];
 
 const initialFilters = {
-  status: "all",
+  status: "pending_deposit",
   paymentStatus: "all",
   location: "all",
   dateFrom: "",
   dateTo: "",
+  historyMonths: "all",
+};
+
+const statusTabSummaryKeys = {
+  pending_deposit: "pending_deposit",
+  open: "open",
+  ready_pickup: "ready_pickup",
+  fulfilled: "fulfilled_recent",
+  history: "history",
 };
 
 function escapeCsv(value) {
@@ -61,7 +71,10 @@ export default function AdminPage() {
   const [summary, setSummary] = useState({
     today_orders: 0,
     pending_deposit: 0,
+    open: 0,
     ready_pickup: 0,
+    fulfilled_recent: 0,
+    history: 0,
     outstanding_amount: 0,
   });
   const [filters, setFilters] = useState(initialFilters);
@@ -111,6 +124,7 @@ export default function AdminPage() {
     Promise.all([
       loadAdminOrders({ filters: requestFilters, page, pageSize }),
       loadAdminSummary(),
+      drainLineNotifications(),
     ]).then(([ordersResult, summaryResult]) => {
       if (!active) return;
       if (ordersResult.error) {
@@ -138,7 +152,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     const timer = setInterval(async () => {
-      const { data, error } = await loadAdminSummary();
+      const [{ data, error }] = await Promise.all([loadAdminSummary(), drainLineNotifications()]);
       if (error || !data) return;
       const changed =
         Number(data.today_orders) !== Number(summary.today_orders) ||
@@ -250,6 +264,7 @@ export default function AdminPage() {
     loadAdminSummary().then(({ data }) => {
       if (data) setSummary(data);
     });
+    setRefreshKey((current) => current + 1);
   }
 
   const topbarActions = (
@@ -266,10 +281,10 @@ export default function AdminPage() {
   return (
     <AdminLayout title="訂單管理" subtitle={`最後更新：${lastUpdated}`} actions={topbarActions}>
       <section className="admin-summary-grid" aria-label="營運摘要">
-        <SummaryCard icon={CalendarDays} label="今日新單" value={`${summary.today_orders || 0} 筆`} tone="blue" onClick={() => selectSummary("all")} />
+        <SummaryCard icon={CalendarDays} label="採買進行中" value={`${summary.open || 0} 筆`} tone="blue" onClick={() => selectSummary("open")} />
         <SummaryCard icon={Bell} label="待確認訂金" value={`${summary.pending_deposit || 0} 筆`} tone="red" onClick={() => selectSummary("pending_deposit")} />
         <SummaryCard icon={PackageCheck} label="待取貨" value={`${summary.ready_pickup || 0} 筆`} tone="green" onClick={() => selectSummary("ready_pickup")} />
-        <SummaryCard icon={WalletCards} label="待收餘額" value={formatCurrency(summary.outstanding_amount || 0)} tone="amber" onClick={() => setFilter("paymentStatus", "unpaid")} />
+        <SummaryCard icon={WalletCards} label="近 7 日完成" value={`${summary.fulfilled_recent || 0} 筆`} tone="amber" onClick={() => selectSummary("fulfilled")} />
       </section>
 
       {newOrdersAvailable ? (
@@ -296,11 +311,38 @@ export default function AdminPage() {
         </div>
 
         <div className="admin-status-tabs" role="tablist" aria-label="訂單狀態">
-          <StatusTab value="all" label="全部" active={filters.status} onClick={selectSummary} />
-          {adminStatusOrder.map((value) => (
-            <StatusTab key={value} value={value} label={adminStatusLabels[value]} active={filters.status} onClick={selectSummary} />
+          {adminStatusTabs.map((value) => (
+            <StatusTab
+              key={value}
+              value={value}
+              label={value === "history" ? "歷史紀錄" : adminStatusLabels[value]}
+              count={summary[statusTabSummaryKeys[value]] || 0}
+              active={filters.status}
+              onClick={selectSummary}
+            />
           ))}
         </div>
+
+        {filters.status === "history" ? (
+          <div className="admin-history-range" aria-label="歷史訂單完成時間">
+            <span>完成時間</span>
+            {[
+              ["1", "近 1 個月"],
+              ["3", "近 3 個月"],
+              ["6", "近 6 個月"],
+              ["all", "全部"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={filters.historyMonths === value ? "active" : ""}
+                onClick={() => setFilter("historyMonths", value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {filtersOpen ? (
           <div className="admin-filter-panel">
@@ -375,8 +417,13 @@ function SummaryCard({ icon: Icon, label, value, tone, onClick }) {
   );
 }
 
-function StatusTab({ value, label, active, onClick }) {
-  return <button type="button" role="tab" aria-selected={active === value} className={active === value ? "active" : ""} onClick={() => onClick(value)}>{label}</button>;
+function StatusTab({ value, label, count, active, onClick }) {
+  return (
+    <button type="button" role="tab" aria-selected={active === value} className={active === value ? "active" : ""} onClick={() => onClick(value)}>
+      <span>{label}</span>
+      <small className="admin-status-tab-count">{count}</small>
+    </button>
+  );
 }
 
 function FilterSelect({ label, value, options, onChange }) {
@@ -399,7 +446,7 @@ function AdminOrderRow({ order, selected, onSelect, onOpen }) {
       <button type="button" className="admin-order-row-main" onClick={onOpen}>
         <div className="admin-order-identity">
           <strong>{order.customer_name}</strong>
-          <span>#{order.id.slice(0, 8)} · {formatDateTime(order.created_at)}</span>
+          <span>#{order.id.slice(0, 8)} · {order.fulfilled_at ? `完成 ${formatDateTime(order.fulfilled_at)}` : formatDateTime(order.created_at)}</span>
         </div>
         <div className="admin-order-delivery"><strong>{order.delivery_location}</strong><span>{quantity} 件商品 · {order.phone}</span></div>
         <div><span className={`admin-payment-badge payment-${paymentStatus}`}>{paymentStatusLabels[paymentStatus]}</span></div>

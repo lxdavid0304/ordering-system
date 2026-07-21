@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { AtSign, BadgeCheck, KeyRound, Mail, Pencil, Phone, Save, ShieldCheck, UserRound, X } from "lucide-react";
+import { AtSign, BadgeCheck, BellRing, KeyRound, Link2, Mail, Pencil, Phone, Save, ShieldCheck, UserRound, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
 import { loadMemberProfile, updateMemberProfile } from "../services/profileService";
+import { issueLineLinkCode, loadLineBinding, updateLineNotifications } from "../services/lineService";
 import { looksLikeEmail, normalizeAccount, normalizePhone } from "../utils/auth";
 
 function validateProfile(profile) {
@@ -35,6 +36,10 @@ export default function ProfilePage() {
     email: "",
   });
   const [message, setMessage] = useState({ text: "", type: "" });
+  const [lineBinding, setLineBinding] = useState(null);
+  const [lineLinkCode, setLineLinkCode] = useState(null);
+  const [lineMessage, setLineMessage] = useState({ text: "", type: "" });
+  const [lineBusy, setLineBusy] = useState(false);
   const profileReady = Boolean(profileSnapshot && profileSnapshot.full_name && profileSnapshot.account);
   const profileInitial = (form.full_name || form.account || "?").trim().slice(0, 1).toUpperCase();
 
@@ -85,6 +90,16 @@ export default function ProfilePage() {
           ? { text: "", type: "" }
           : { text: "請確認會員資料後按一次儲存，以完成會員資料建立。", type: "error" }
       );
+
+      const { data: binding, error: bindingError } = await loadLineBinding(user.id);
+      if (!active) {
+        return;
+      }
+      if (bindingError) {
+        setLineMessage({ text: "LINE 綁定狀態讀取失敗，請重新整理後再試。", type: "error" });
+      } else {
+        setLineBinding(binding);
+      }
     }
 
     run();
@@ -140,6 +155,32 @@ export default function ProfilePage() {
     }
     setEditing(false);
     setMessage({ text: "", type: "" });
+  }
+
+  async function handleIssueLineCode() {
+    setLineBusy(true);
+    setLineMessage({ text: "", type: "" });
+    const { data, error } = await issueLineLinkCode();
+    setLineBusy(false);
+    if (error || !data?.code) {
+      setLineMessage({ text: "無法產生 LINE 綁定碼，請稍後再試。", type: "error" });
+      return;
+    }
+    setLineLinkCode(data);
+    setLineMessage({ text: "請將下方指令傳送到你的 LINE 官方帳號。", type: "success" });
+  }
+
+  async function handleNotificationChange(event) {
+    const enabled = event.target.checked;
+    setLineBusy(true);
+    const { data, error } = await updateLineNotifications(enabled);
+    setLineBusy(false);
+    if (error || !data) {
+      setLineMessage({ text: "LINE 通知設定更新失敗，請稍後再試。", type: "error" });
+      return;
+    }
+    setLineBinding(data);
+    setLineMessage({ text: enabled ? "已開啟 LINE 訂單通知。" : "已暫停 LINE 訂單通知。", type: "success" });
   }
 
   return (
@@ -251,6 +292,45 @@ export default function ProfilePage() {
               <KeyRound size={18} />
               修改登入密碼
             </Link>
+
+            <div className="profile-line-section">
+              <div className="profile-section-icon line"><BellRing size={20} /></div>
+              <p className="section-eyebrow">LINE NOTIFICATIONS</p>
+              <h3>LINE 訂單通知</h3>
+              {lineBinding ? (
+                <>
+                  <p>{lineBinding.blocked_at ? "LINE 官方帳號目前無法接收訊息，請重新加好友後再綁定。" : "已綁定 LINE，可接收訂金、採買與取貨狀態通知。"}</p>
+                  {!lineBinding.blocked_at ? (
+                    <label className="profile-line-toggle">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(lineBinding.notifications_enabled)}
+                        disabled={lineBusy}
+                        onChange={handleNotificationChange}
+                      />
+                      <span>接收訂單狀態通知</span>
+                    </label>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <p>綁定後，訂單狀態更新會直接傳送到你的 LINE。</p>
+                  <button type="button" className="ghost profile-line-code-button" disabled={lineBusy} onClick={handleIssueLineCode}>
+                    <Link2 size={17} />
+                    {lineBusy ? "產生中..." : "取得綁定碼"}
+                  </button>
+                </>
+              )}
+
+              {lineLinkCode && !lineBinding ? (
+                <div className="profile-line-code" aria-live="polite">
+                  <span>傳送給官方帳號</span>
+                  <strong>綁定 {lineLinkCode.code}</strong>
+                  <small>此綁定碼將於 15 分鐘後失效。</small>
+                </div>
+              ) : null}
+              <FormMessage text={lineMessage.text} type={lineMessage.type} />
+            </div>
           </aside>
         </form>
       </section>

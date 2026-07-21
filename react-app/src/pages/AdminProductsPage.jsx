@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Tag } from "lucide-react";
 import AdminLayout from "../components/AdminLayout";
 import FormMessage from "../components/FormMessage";
 import { useAuth } from "../context/AuthContext";
@@ -14,6 +15,8 @@ import {
 import { formatPriceRange } from "../utils/format";
 import { createUuid } from "../utils/orders";
 
+const DEFAULT_CATEGORIES = ["食品", "生鮮冷藏", "生活用品", "其他"];
+
 const emptyForm = {
   id: "",
   product_name: "",
@@ -21,12 +24,41 @@ const emptyForm = {
   category: "其他",
   unit_price_min: "",
   unit_price: 0,
+  cost_price_min: "",
+  cost_price: "",
+  shipping_fee_per_unit: 20,
   image_path: "",
   image_url: "",
   costco_url: "",
   is_active: false,
   sort_order: 0,
 };
+
+function normalizeNonnegativeAmount(value) {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function getCalculatedPrices(source) {
+  const hasMaximumCost = String(source.cost_price ?? "").trim() !== "";
+  if (!hasMaximumCost) {
+    return {
+      unit_price_min: null,
+      unit_price: null,
+    };
+  }
+
+  const maximumCost = normalizeNonnegativeAmount(source.cost_price);
+  const shippingFee = normalizeNonnegativeAmount(source.shipping_fee_per_unit);
+  const hasMinimumCost = String(source.cost_price_min ?? "").trim() !== "";
+  const minimumCost = hasMinimumCost
+    ? normalizeNonnegativeAmount(source.cost_price_min)
+    : maximumCost;
+
+  return {
+    unit_price_min: hasMinimumCost ? minimumCost + shippingFee : null,
+    unit_price: maximumCost + shippingFee,
+  };
+}
 
 export default function AdminProductsPage() {
   const { user } = useAuth();
@@ -41,9 +73,17 @@ export default function AdminProductsPage() {
   const [message, setMessage] = useState({ text: "", type: "" });
 
   const categories = useMemo(
-    () => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort(),
+    () => Array.from(new Set([...DEFAULT_CATEGORIES, ...products.map((product) => product.category).filter(Boolean)])),
     [products]
   );
+  const calculatedPrices = useMemo(() => getCalculatedPrices(form), [form]);
+  const calculatedPriceLabel = useMemo(() => {
+    const { unit_price_min: minimumPrice, unit_price: maximumPrice } = calculatedPrices;
+    if (maximumPrice === null || (minimumPrice !== null && minimumPrice > maximumPrice)) {
+      return "－";
+    }
+    return formatPriceRange(minimumPrice, maximumPrice);
+  }, [calculatedPrices]);
 
   useEffect(() => {
     document.title = "熱門商品管理 | 訂購系統";
@@ -121,12 +161,21 @@ export default function AdminProductsPage() {
   }
 
   function startEdit(product) {
-    setForm({ ...product, unit_price_min: product.unit_price_min ?? "" });
+    setForm({
+      ...product,
+      cost_price_min: product.cost_price_min ?? "",
+      cost_price: product.cost_price ?? product.unit_price ?? 0,
+      shipping_fee_per_unit: product.shipping_fee_per_unit ?? 20,
+    });
     setImageFile(null);
     setImagePreview(product.image_url || "");
     setImageDimensions(null);
     setMessage({ text: "", type: "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function updatePricing(nextValues) {
+    setForm((current) => ({ ...current, ...nextValues, ...getCalculatedPrices({ ...current, ...nextValues }) }));
   }
 
   async function handleSubmit(event) {
@@ -155,6 +204,7 @@ export default function AdminProductsPage() {
 
     const { error } = await savePopularProduct({
       ...form,
+      ...calculatedPrices,
       id: productId,
       image_path: nextImagePath,
     });
@@ -229,102 +279,152 @@ export default function AdminProductsPage() {
             </div>
 
             <form className="admin-product-form" onSubmit={handleSubmit}>
-              <label className="field">
-                <span>商品名稱</span>
-                <input
-                  type="text"
-                  value={form.product_name}
-                  maxLength="120"
-                  required
-                  disabled={saving}
-                  placeholder="例如：科克蘭衛生紙"
-                  onChange={(event) => setForm((current) => ({ ...current, product_name: event.target.value }))}
-                />
-              </label>
-              <label className="field">
-                <span>包裝規格</span>
-                <input
-                  type="text"
-                  value={form.specification}
-                  maxLength="160"
-                  disabled={saving}
-                  placeholder="例如：425 張 × 30 捲"
-                  onChange={(event) => setForm((current) => ({ ...current, specification: event.target.value }))}
-                />
-              </label>
-              <label className="field">
-                <span>Costco 商品連結</span>
-                <input
-                  type="url"
-                  value={form.costco_url || ""}
-                  disabled={saving}
-                  placeholder="https://www.costco.com.tw/..."
-                  onChange={(event) => setForm((current) => ({ ...current, costco_url: event.target.value }))}
-                />
-                <small className="muted">僅接受 Costco 台灣官網連結，可留空。</small>
-              </label>
-              <label className="field">
-                <span>分類</span>
-                <input
-                  type="text"
-                  value={form.category}
-                  maxLength="60"
-                  list="popularProductCategories"
-                  required
-                  disabled={saving}
-                  onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                />
-                <datalist id="popularProductCategories">
-                  {categories.map((category) => <option key={category} value={category} />)}
-                </datalist>
-              </label>
-              <div className="admin-product-form-row">
+              <div className="admin-product-entry-grid">
+                <section className="admin-product-details" aria-label="商品基本資料">
+                  <div className="admin-product-section-heading">
+                    <span>01</span>
+                    <strong>基本資料</strong>
+                  </div>
+                  <div className="admin-product-basic-row">
+                    <label className="field admin-product-name-field">
+                      <span>商品名稱</span>
+                      <input
+                        type="text"
+                        value={form.product_name}
+                        maxLength="120"
+                        required
+                        disabled={saving}
+                        placeholder="例如：科克蘭衛生紙"
+                        onChange={(event) => setForm((current) => ({ ...current, product_name: event.target.value }))}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>包裝規格</span>
+                      <input
+                        type="text"
+                        value={form.specification}
+                        maxLength="160"
+                        disabled={saving}
+                        placeholder="例如：425 張 × 30 捲"
+                        onChange={(event) => setForm((current) => ({ ...current, specification: event.target.value }))}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>分類</span>
+                      <input
+                        type="text"
+                        value={form.category}
+                        maxLength="60"
+                        list="popularProductCategories"
+                        required
+                        disabled={saving}
+                        onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+                      />
+                      <datalist id="popularProductCategories">
+                        {categories.map((category) => <option key={category} value={category} />)}
+                      </datalist>
+                    </label>
+                    <label className="field">
+                      <span>Costco 商品連結</span>
+                      <input
+                        type="url"
+                        value={form.costco_url || ""}
+                        disabled={saving}
+                        placeholder="https://www.costco.com.tw/..."
+                        onChange={(event) => setForm((current) => ({ ...current, costco_url: event.target.value }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="admin-category-suggestions" aria-label="常用分類">
+                    {DEFAULT_CATEGORIES.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        className={form.category === category ? "active" : ""}
+                        disabled={saving}
+                        onClick={() => setForm((current) => ({ ...current, category }))}
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="admin-product-pricing" aria-label="成本與售價設定">
+                  <div className="admin-product-section-heading">
+                    <span>02</span>
+                    <strong>成本與售價</strong>
+                  </div>
+                  <div className="admin-pricing-layout">
+                    <div className="admin-cost-input-grid">
+                      <label className="field">
+                        <span>最低成本</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={form.cost_price_min}
+                          disabled={saving}
+                          placeholder="固定價可留空"
+                          onChange={(event) => updatePricing({ cost_price_min: event.target.value })}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>最高成本</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={form.cost_price}
+                          required
+                          disabled={saving}
+                          onChange={(event) => updatePricing({ cost_price: event.target.value })}
+                        />
+                      </label>
+                      <label className="field admin-shipping-fee-field">
+                        <span>每件運費</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={form.shipping_fee_per_unit}
+                          required
+                          disabled={saving}
+                          onChange={(event) => updatePricing({ shipping_fee_per_unit: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                    <output className="admin-price-preview" aria-label="前台售價區間">
+                      <Tag aria-hidden="true" size={18} strokeWidth={2.2} />
+                      <span>前台售價</span>
+                      <strong>{calculatedPriceLabel}</strong>
+                    </output>
+                  </div>
+                </section>
+              </div>
+
+              <div className="admin-product-support-grid">
                 <label className="field">
-                  <span>最低預估價（可留空）</span>
+                  <span>排序</span>
                   <input
                     type="number"
-                    min="0"
                     step="1"
-                    value={form.unit_price_min}
+                    value={form.sort_order}
                     disabled={saving}
-                    placeholder="固定價商品可留空"
-                    onChange={(event) => setForm((current) => ({ ...current, unit_price_min: event.target.value }))}
+                    onChange={(event) => setForm((current) => ({ ...current, sort_order: event.target.value }))}
                   />
                 </label>
                 <label className="field">
-                  <span>最高預估價／固定價</span>
+                  <span>商品圖片</span>
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.unit_price}
-                    required
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
                     disabled={saving}
-                    onChange={(event) => setForm((current) => ({ ...current, unit_price: event.target.value }))}
+                    onChange={(event) => handleFileChange(event.target.files?.[0])}
                   />
+                  <small className="muted">JPG、PNG、WebP，最大 5 MB。</small>
                 </label>
               </div>
-              <small className="muted">設定範圍時，訂單總額會以最高預估價計算。</small>
-              <label className="field">
-                <span>排序</span>
-                <input
-                  type="number"
-                  step="1"
-                  value={form.sort_order}
-                  disabled={saving}
-                  onChange={(event) => setForm((current) => ({ ...current, sort_order: event.target.value }))}
-                />
-              </label>
-              <label className="field">
-                <span>商品圖片</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={saving}
-                  onChange={(event) => handleFileChange(event.target.files?.[0])}
-                />
-                <small className="muted">JPG、PNG、WebP，最大 5 MB；建議至少 1200 × 900px。</small>
-              </label>
               {imagePreview || form.image_url ? (
                 <div className="admin-product-image-preview">
                   <img
@@ -398,6 +498,7 @@ export default function AdminProductsPage() {
                     </div>
                     <div className="admin-product-card-meta">
                       <strong>{formatPriceRange(product.unit_price_min, product.unit_price)}</strong>
+                      <span className="shipping-included">含運價</span>
                       <span>排序 {product.sort_order}</span>
                     </div>
                     <div className="admin-product-card-actions">

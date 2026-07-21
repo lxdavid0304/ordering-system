@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, MapPin, Package } from "lucide-react";
+import { ClipboardPenLine, ChevronRight, MapPin, Package, RotateCw } from "lucide-react";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import MemberOrderDetailDrawer from "../components/MemberOrderDetailDrawer";
@@ -15,7 +15,6 @@ import {
 import { readPaymentPreview } from "../utils/storage";
 
 const statusTabs = [
-  { value: "all", label: "全部進行中" },
   { value: "pending_deposit", label: "待確認訂金" },
   { value: "open", label: "採買進行中" },
   { value: "ready_pickup", label: "待取貨" },
@@ -56,7 +55,10 @@ function PendingOrderCard({ order, isLatest, onOpenDetails }) {
         </StatusBadge>
       </div>
 
-      <div className="ongoing-compact-products" aria-label="商品摘要">
+      <div
+        className={`ongoing-compact-products${previewItems.length === 1 ? " single-product" : ""}`}
+        aria-label="商品摘要"
+      >
         {previewItems.map((item, index) => (
           <div key={`${order.id}-preview-${index}`} className="ongoing-compact-product">
             <strong>{item.product_name}</strong>
@@ -68,8 +70,8 @@ function PendingOrderCard({ order, isLatest, onOpenDetails }) {
 
       <div className="ongoing-compact-footer">
         <div>
-          <span><MapPin size={14} aria-hidden="true" />{order.delivery_location || "未指定交貨地點"}</span>
-          <small><Package size={14} aria-hidden="true" />共 {getTotalQuantity(order)} 件商品</small>
+          <small><MapPin size={14} aria-hidden="true" />{order.delivery_location || "未指定交貨地點"}</small>
+          <small><Package size={14} aria-hidden="true" />{getTotalQuantity(order)} 件</small>
         </div>
         <div>
           <span>訂單總額</span>
@@ -94,7 +96,7 @@ function PendingOrderCard({ order, isLatest, onOpenDetails }) {
 export default function PendingOrderPage() {
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
-  const [activeStatus, setActiveStatus] = useState("all");
+  const [activeStatus, setActiveStatus] = useState("pending_deposit");
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [updatedAt, setUpdatedAt] = useState("--");
   const [message, setMessage] = useState({ text: "", type: "" });
@@ -136,7 +138,6 @@ export default function PendingOrderPage() {
 
   const statusCounts = useMemo(
     () => ({
-      all: ongoingOrders.length,
       pending_deposit: ongoingOrders.filter((order) => order.status === "pending_deposit").length,
       open: ongoingOrders.filter((order) => order.status === "open").length,
       ready_pickup: ongoingOrders.filter((order) => order.status === "ready_pickup").length,
@@ -145,9 +146,7 @@ export default function PendingOrderPage() {
   );
 
   const visibleOrders = useMemo(
-    () => activeStatus === "all"
-      ? ongoingOrders
-      : ongoingOrders.filter((order) => order.status === activeStatus),
+    () => ongoingOrders.filter((order) => order.status === activeStatus),
     [activeStatus, ongoingOrders]
   );
 
@@ -179,8 +178,15 @@ export default function PendingOrderPage() {
             <h2>目前進行中的訂單</h2>
             <p>共 {ongoingOrders.length} 筆訂單，最後更新：{updatedAt}</p>
           </div>
-          <button type="button" className="ghost ongoing-refresh-btn" disabled={loading} onClick={refreshOrders}>
-            {loading ? "更新中..." : "重新整理"}
+          <button
+            type="button"
+            className="ghost ongoing-refresh-btn"
+            aria-label="重新整理訂單"
+            title="重新整理訂單"
+            disabled={loading}
+            onClick={refreshOrders}
+          >
+            <RotateCw className={loading ? "is-spinning" : ""} size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -189,6 +195,7 @@ export default function PendingOrderPage() {
             <button
               key={tab.value}
               type="button"
+              data-status={tab.value}
               className={activeStatus === tab.value ? "active" : ""}
               aria-pressed={activeStatus === tab.value}
               onClick={() => setActiveStatus(tab.value)}
@@ -228,7 +235,10 @@ export default function PendingOrderPage() {
         <FormMessage text={message.text} type={message.type} />
 
         <div className="actions payment-actions">
-          <Link className="ghost" to="/order">返回填單頁</Link>
+          <Link className="return-to-order-link" to="/order">
+            <ClipboardPenLine size={16} aria-hidden="true" />
+            返回填單頁
+          </Link>
         </div>
       </section>
       <MemberOrderDetailDrawer order={selectedOrder} onClose={closeOrderDetails} />

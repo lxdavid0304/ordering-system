@@ -1,6 +1,17 @@
 export const CASH_THRESHOLD = 300;
 export const SHIPPING_FEE_PER_ITEM = 20;
 
+export function getShippingFeePerUnit(item) {
+  if (item?.catalog_product_id) {
+    return 0;
+  }
+  const value = Number(item?.shipping_fee_per_unit);
+  if (!Number.isFinite(value)) {
+    return SHIPPING_FEE_PER_ITEM;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
 export function createUuid() {
   if (crypto?.randomUUID) {
     return crypto.randomUUID();
@@ -22,6 +33,7 @@ export function createEmptyOrderItem() {
     product_name: "",
     unit_price: 0,
     quantity: 1,
+    shipping_fee_per_unit: SHIPPING_FEE_PER_ITEM,
     catalog_product_id: null,
   };
 }
@@ -44,6 +56,7 @@ export function normalizeOrderItem(item) {
     product_name: productName,
     unit_price: normalizeAmount(item?.unit_price),
     quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+    shipping_fee_per_unit: getShippingFeePerUnit(item),
     ...(catalogProductId ? { catalog_product_id: catalogProductId } : {}),
   };
 }
@@ -85,7 +98,13 @@ export function calculateItemsQuantity(items) {
 }
 
 export function calculateShippingAmount(items) {
-  return calculateItemsQuantity(items) * SHIPPING_FEE_PER_ITEM;
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+  return items.reduce((sum, item) => {
+    const qty = Math.max(1, Math.floor(Number(item?.quantity) || 1));
+    return sum + qty * getShippingFeePerUnit(item);
+  }, 0);
 }
 
 export function calculateOrderAmounts(items) {

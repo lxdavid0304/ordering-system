@@ -408,6 +408,7 @@ export default function OrderPage() {
         product_name: product.display_name,
         unit_price: Number(product.unit_price || 0),
         quantity,
+        shipping_fee_per_unit: Number(product.shipping_fee_per_unit ?? 20),
         catalog_product_id: product.id,
         catalog_unavailable: false,
       };
@@ -477,6 +478,22 @@ export default function OrderPage() {
     }
 
     setIsSubmitting(true);
+    savePaymentPreview({
+      order_id: "",
+      idempotency_key: getIdempotencyKey(),
+      device_id: getDeviceId(),
+      items_total: previewAmounts.itemsTotal,
+      shipping_amount: previewAmounts.shippingAmount,
+      total_amount: previewAmounts.finalTotalAmount,
+      delivery_location: deliveryLocation,
+      created_at: new Date().toISOString(),
+      note: note.trim(),
+      order_items: normalizedItems,
+      status: "payment_selection",
+    });
+    setIsSubmitting(false);
+    navigate("/payment", { replace: true });
+    return;
     setMessage({ text: "送出中...", type: "" });
 
     const { data: sessionData, error: sessionError } = await memberSupabase.auth.getSession();
@@ -709,6 +726,7 @@ export default function OrderPage() {
                           : "代購價"}
                       </span>
                       <strong>{formatPriceRange(product.unit_price_min, product.unit_price)}</strong>
+                      <small>含運價</small>
                     </div>
                     <div className="popular-quantity-control" aria-label={`${product.product_name}數量`}>
                       <button

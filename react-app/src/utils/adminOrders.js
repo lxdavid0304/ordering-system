@@ -1,6 +1,6 @@
 export const adminStatusLabels = {
   pending_deposit: "待確認訂金",
-  open: "進行中",
+  open: "採買進行中",
   ready_pickup: "待取貨",
   fulfilled: "已完成",
   archived: "歷史紀錄",
@@ -12,6 +12,21 @@ export const adminStatusOrder = [
   "ready_pickup",
   "fulfilled",
   "archived",
+];
+
+export const adminWorkflowStatusOrder = [
+  "pending_deposit",
+  "open",
+  "ready_pickup",
+  "fulfilled",
+];
+
+export const adminStatusTabs = [
+  "pending_deposit",
+  "open",
+  "ready_pickup",
+  "fulfilled",
+  "history",
 ];
 
 export const paymentStatusLabels = {
@@ -27,7 +42,7 @@ export const paymentMethodLabels = {
 };
 
 export function getAdminStatusLabel(status) {
-  return adminStatusLabels[status] || "進行中";
+  return adminStatusLabels[status] || "狀態更新中";
 }
 
 export function getPaymentStatus(order) {
@@ -41,8 +56,10 @@ export function getPaymentStatus(order) {
 }
 
 export function getNextAdminStatus(status) {
-  const index = adminStatusOrder.indexOf(status);
-  return index >= 0 && index < adminStatusOrder.length - 1 ? adminStatusOrder[index + 1] : null;
+  const index = adminWorkflowStatusOrder.indexOf(status);
+  return index >= 0 && index < adminWorkflowStatusOrder.length - 1
+    ? adminWorkflowStatusOrder[index + 1]
+    : null;
 }
 
 export function getDepositDue(totalAmount) {

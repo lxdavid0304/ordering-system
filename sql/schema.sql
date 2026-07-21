@@ -5,7 +5,9 @@ create table if not exists public.orders (
   phone text not null,
   delivery_location text not null,
   note text,
-  total_amount integer not null default 0
+  total_amount integer not null default 0,
+  shipping_amount integer not null default 0 check (shipping_amount >= 0),
+  profit_amount integer not null default 0
 );
 
 alter table public.orders
@@ -17,7 +19,9 @@ create table if not exists public.order_items (
   product_name text not null,
   unit_price integer not null check (unit_price >= 0),
   quantity integer not null check (quantity > 0),
-  line_total integer not null
+  line_total integer not null,
+  cost_price integer not null default 0 check (cost_price >= 0),
+  shipping_fee_per_unit integer not null default 20 check (shipping_fee_per_unit >= 0)
 );
 
 create table if not exists public.favorite_items (
@@ -40,6 +44,9 @@ create table if not exists public.popular_products (
   category text not null default '其他' check (length(trim(category)) between 1 and 60),
   unit_price_min integer,
   unit_price integer not null check (unit_price >= 0),
+  cost_price_min integer,
+  cost_price integer not null default 0 check (cost_price >= 0),
+  shipping_fee_per_unit integer not null default 20 check (shipping_fee_per_unit >= 0),
   image_path text not null check (length(trim(image_path)) > 0),
   costco_url text check (
     costco_url is null
@@ -56,6 +63,9 @@ alter table public.popular_products
   add column if not exists unit_price_min integer;
 
 alter table public.popular_products
+  add column if not exists cost_price_min integer;
+
+alter table public.popular_products
   drop constraint if exists popular_products_price_range_check;
 
 alter table public.popular_products
@@ -63,6 +73,16 @@ alter table public.popular_products
   check (
     unit_price_min is null
     or (unit_price_min >= 0 and unit_price_min <= unit_price)
+  );
+
+alter table public.popular_products
+  drop constraint if exists popular_products_cost_price_range_check;
+
+alter table public.popular_products
+  add constraint popular_products_cost_price_range_check
+  check (
+    cost_price_min is null
+    or (cost_price_min >= 0 and cost_price_min <= cost_price)
   );
 
 create unique index if not exists popular_products_name_specification_key
@@ -212,10 +232,23 @@ language plpgsql
 as $$
 declare
   target_id uuid;
+  v_items_total integer;
+  v_shipping_total integer;
+  v_profit_total integer;
 begin
   target_id := coalesce(new.order_id, old.order_id);
+  select
+    coalesce(sum(line_total), 0)::integer,
+    coalesce(sum(case when catalog_product_id is null then quantity * 20 else 0 end), 0)::integer,
+    coalesce(sum(quantity * shipping_fee_per_unit), 0)::integer
+  into v_items_total, v_shipping_total, v_profit_total
+  from public.order_items
+  where order_id = target_id;
+
   update public.orders
-    set total_amount = coalesce((select sum(line_total) from public.order_items where order_id = target_id), 0)
+    set total_amount = v_items_total + v_shipping_total,
+        shipping_amount = v_shipping_total,
+        profit_amount = v_profit_total
     where id = target_id;
   return coalesce(new, old);
 end;
@@ -552,11 +585,15 @@ declare
   v_item jsonb;
   v_name text;
   v_unit_price int;
+  v_cost_price int;
+  v_shipping_fee_per_unit int := 20;
+  v_customer_shipping_fee_per_unit int := 20;
   v_quantity int;
   v_catalog_product_id uuid;
   v_catalog_product public.popular_products%rowtype;
   v_items_total int := 0;
   v_shipping_total int := 0;
+  v_profit_total int := 0;
   v_total int := 0;
   v_customer_name text;
   v_phone text;
@@ -623,6 +660,9 @@ begin
     v_unit_price := (v_item->>'unit_price')::int;
     v_quantity := (v_item->>'quantity')::int;
     v_catalog_product_id := null;
+    v_cost_price := v_unit_price;
+    v_shipping_fee_per_unit := 20;
+    v_customer_shipping_fee_per_unit := 20;
 
     if nullif(trim(coalesce(v_item->>'catalog_product_id', '')), '') is not null then
       begin
@@ -652,6 +692,9 @@ begin
         nullif(trim(v_catalog_product.specification), '')
       );
       v_unit_price := v_catalog_product.unit_price;
+      v_cost_price := v_catalog_product.cost_price;
+      v_shipping_fee_per_unit := v_catalog_product.shipping_fee_per_unit;
+      v_customer_shipping_fee_per_unit := 0;
     end if;
 
     if v_unit_price < 0 or v_quantity <= 0 then
@@ -659,7 +702,8 @@ begin
     end if;
 
     v_items_total := v_items_total + (v_unit_price * v_quantity);
-    v_shipping_total := v_shipping_total + (v_quantity * 20);
+    v_shipping_total := v_shipping_total + (v_quantity * v_customer_shipping_fee_per_unit);
+    v_profit_total := v_profit_total + (v_quantity * v_shipping_fee_per_unit);
 
     insert into public.order_items (
       order_id,
@@ -667,7 +711,9 @@ begin
       unit_price,
       quantity,
       line_total,
-      catalog_product_id
+      catalog_product_id,
+      cost_price,
+      shipping_fee_per_unit
     )
     values (
       v_order_id,
@@ -675,7 +721,9 @@ begin
       v_unit_price,
       v_quantity,
       v_unit_price * v_quantity,
-      v_catalog_product_id
+      v_catalog_product_id,
+      v_cost_price,
+      v_shipping_fee_per_unit
     );
   end loop;
 
@@ -686,7 +734,9 @@ begin
   v_total := v_items_total + v_shipping_total;
 
   update public.orders
-    set total_amount = v_total
+    set total_amount = v_total,
+        shipping_amount = v_shipping_total,
+        profit_amount = v_profit_total
       , status = case
           when v_total > 300 then 'pending_deposit'
           else 'open'
@@ -711,10 +761,15 @@ alter table public.orders
   add column if not exists balance_payment_method text,
   add column if not exists balance_paid_at timestamptz,
   add column if not exists payment_review_required boolean not null default true,
+  add column if not exists fulfilled_at timestamptz,
   add column if not exists updated_at timestamptz;
 
 update public.orders
 set updated_at = coalesce(updated_at, created_at, now());
+
+create index if not exists orders_fulfilled_at_idx
+  on public.orders (fulfilled_at desc)
+  where status in ('fulfilled', 'archived');
 
 alter table public.orders
   alter column updated_at set default now(),
@@ -1173,6 +1228,7 @@ begin
       payment_review_required = not p_review_complete,
       status = case
         when status = 'pending_deposit' and v_next_deposit + v_next_balance >= v_deposit_due then 'open'
+        when status = 'ready_pickup' and v_next_deposit + v_next_balance >= v_order.total_amount then 'fulfilled'
         else status
       end
   where id = p_order_id
@@ -1324,3 +1380,398 @@ grant execute on function public.admin_update_order(uuid, text, text, text) to a
 grant execute on function public.admin_save_order_payment(uuid, text, integer, text, timestamptz, boolean) to authenticated;
 grant execute on function public.member_set_order_payment_method(uuid, text) to authenticated;
 grant execute on function public.admin_export_orders(text, text, text, text, date, date) to authenticated;
+
+-- LINE member linking and order status notification outbox.
+create table if not exists public.member_line_bindings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  line_user_id text not null unique check (line_user_id ~ '^U[0-9a-f]{32}$'),
+  notifications_enabled boolean not null default true,
+  linked_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  blocked_at timestamptz
+);
+
+create table if not exists public.member_line_link_codes (
+  code text primary key check (code ~ '^[A-F0-9]{12}$'),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists member_line_link_codes_active_user_key
+  on public.member_line_link_codes (user_id) where consumed_at is null;
+create index if not exists member_line_link_codes_expiry_idx
+  on public.member_line_link_codes (expires_at) where consumed_at is null;
+
+create table if not exists public.line_notification_jobs (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  event_type text not null check (event_type in ('order_status_changed')),
+  status text not null default 'pending' check (status in ('pending', 'processing', 'sent', 'skipped', 'failed')),
+  attempts integer not null default 0 check (attempts >= 0),
+  payload jsonb not null default '{}'::jsonb,
+  error_message text,
+  sent_at timestamptz,
+  next_attempt_at timestamptz not null default now(),
+  processing_started_at timestamptz,
+  claim_token uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists line_notification_jobs_pending_idx
+  on public.line_notification_jobs (status, created_at) where status = 'pending';
+create index if not exists line_notification_jobs_retry_idx
+  on public.line_notification_jobs (next_attempt_at, created_at)
+  where status in ('pending', 'failed');
+
+alter table public.member_line_bindings enable row level security;
+alter table public.member_line_link_codes enable row level security;
+alter table public.line_notification_jobs enable row level security;
+
+drop policy if exists "member read own line binding" on public.member_line_bindings;
+create policy "member read own line binding" on public.member_line_bindings
+  for select to authenticated using (user_id = auth.uid());
+drop policy if exists "admin read line bindings" on public.member_line_bindings;
+create policy "admin read line bindings" on public.member_line_bindings
+  for select to authenticated using (public.is_admin_user());
+drop policy if exists "member update own line preference" on public.member_line_bindings;
+create policy "member update own line preference" on public.member_line_bindings
+  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+revoke all on public.member_line_bindings from anon, authenticated;
+grant select on public.member_line_bindings to authenticated;
+grant update (notifications_enabled) on public.member_line_bindings to authenticated;
+
+create or replace function public.issue_line_link_code()
+returns table (code text, expires_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_code text;
+  v_expiry timestamptz := now() + interval '15 minutes';
+begin
+  if auth.uid() is null then raise exception 'AUTHENTICATION_REQUIRED' using errcode = '42501'; end if;
+  delete from public.member_line_link_codes where user_id = auth.uid() and consumed_at is null;
+  v_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12));
+  insert into public.member_line_link_codes (code, user_id, expires_at) values (v_code, auth.uid(), v_expiry);
+  return query select v_code, v_expiry;
+end;
+$$;
+
+create or replace function public.consume_line_link_code(p_code text, p_line_user_id text)
+returns text language plpgsql security definer set search_path = public as $$
+declare v_code public.member_line_link_codes%rowtype;
+begin
+  if p_code !~ '^[A-F0-9]{12}$' or p_line_user_id !~ '^U[0-9a-f]{32}$' then return 'INVALID'; end if;
+  select * into v_code from public.member_line_link_codes where code = p_code for update;
+  if not found or v_code.consumed_at is not null or v_code.expires_at <= now() then return 'EXPIRED'; end if;
+  if exists (select 1 from public.member_line_bindings where line_user_id = p_line_user_id and user_id <> v_code.user_id) then return 'ALREADY_LINKED'; end if;
+  insert into public.member_line_bindings (user_id, line_user_id, notifications_enabled, linked_at, updated_at, blocked_at)
+  values (v_code.user_id, p_line_user_id, true, now(), now(), null)
+  on conflict (user_id) do update set line_user_id = excluded.line_user_id, notifications_enabled = true, updated_at = now(), blocked_at = null;
+  update public.member_line_link_codes set consumed_at = now() where code = v_code.code;
+  return 'LINKED';
+end;
+$$;
+
+create or replace function public.mark_line_account_unfollowed(p_line_user_id text)
+returns void language sql security definer set search_path = public as $$
+  update public.member_line_bindings set blocked_at = now(), updated_at = now() where line_user_id = p_line_user_id;
+$$;
+
+create or replace function public.queue_line_order_status_notification()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.status is distinct from new.status and new.user_id is not null then
+    insert into public.line_notification_jobs (order_id, user_id, event_type, payload)
+    values (new.id, new.user_id, 'order_status_changed', jsonb_build_object('from_status', old.status, 'to_status', new.status));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists queue_line_order_status_notification_after_update on public.orders;
+create trigger queue_line_order_status_notification_after_update
+after update of status on public.orders
+for each row execute function public.queue_line_order_status_notification();
+
+-- Notifications retain an order snapshot in their payload so a delayed retry
+-- does not report a status or amount changed after the queue entry was created.
+create or replace function public.queue_line_order_status_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.status is distinct from new.status and new.user_id is not null then
+    insert into public.line_notification_jobs (order_id, user_id, event_type, payload)
+    values (
+      new.id,
+      new.user_id,
+      'order_status_changed',
+      jsonb_build_object(
+        'from_status', old.status,
+        'to_status', new.status,
+        'delivery_location', new.delivery_location,
+        'total_amount', new.total_amount,
+        'quoted_total_amount', new.quoted_total_amount,
+        'deposit_paid_amount', new.deposit_paid_amount,
+        'balance_paid_amount', new.balance_paid_amount,
+        'price_adjusted', old.total_amount is distinct from new.total_amount
+      )
+    );
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on public.member_line_link_codes from anon, authenticated;
+revoke all on public.line_notification_jobs from anon, authenticated;
+revoke all on function public.issue_line_link_code() from public;
+revoke all on function public.consume_line_link_code(text, text) from public;
+revoke all on function public.mark_line_account_unfollowed(text) from public;
+grant execute on function public.issue_line_link_code() to authenticated;
+grant execute on function public.consume_line_link_code(text, text) to service_role;
+grant execute on function public.mark_line_account_unfollowed(text) to service_role;
+
+-- Operating report. Shipping revenue is captured at creation so historical reports stay stable.
+alter table public.popular_products
+  add column if not exists cost_price integer not null default 0,
+  add column if not exists shipping_fee_per_unit integer not null default 20;
+
+update public.popular_products
+set cost_price = unit_price
+where cost_price = 0;
+
+alter table public.order_items
+  add column if not exists cost_price integer not null default 0,
+  add column if not exists shipping_fee_per_unit integer not null default 20;
+
+update public.order_items
+set cost_price = unit_price
+where cost_price = 0;
+
+alter table public.orders
+  add column if not exists shipping_amount integer not null default 0,
+  add column if not exists profit_amount integer not null default 0;
+
+update public.orders o
+set shipping_amount = coalesce((
+  select sum(oi.quantity * 20)
+  from public.order_items oi
+  where oi.order_id = o.id
+), 0)
+where o.shipping_amount = 0;
+
+update public.orders o
+set profit_amount = coalesce((
+  select sum(oi.quantity * oi.shipping_fee_per_unit)
+  from public.order_items oi
+  where oi.order_id = o.id
+), 0)
+where o.profit_amount = 0;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'orders_shipping_amount_valid'
+  ) then
+    alter table public.orders
+      add constraint orders_shipping_amount_valid
+      check (shipping_amount >= 0);
+  end if;
+end;
+$$;
+
+create or replace function public.admin_operating_report(p_period text default 'month')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_period text := coalesce(nullif(trim(p_period), ''), 'month');
+  v_local_now timestamp := now() at time zone 'Asia/Taipei';
+  v_today_start timestamptz := date_trunc('day', now() at time zone 'Asia/Taipei') at time zone 'Asia/Taipei';
+  v_period_start timestamptz;
+  v_period_end timestamptz := now();
+  v_recent_fulfilled_cutoff timestamptz := now() - interval '7 days';
+  v_collected_amount integer := 0;
+  v_trend jsonb := '[]'::jsonb;
+  v_result jsonb;
+begin
+  if not public.is_admin_user() then
+    raise exception 'ADMIN_REQUIRED' using errcode = '42501';
+  end if;
+
+  if v_period not in ('today', 'week', 'month', 'all') then
+    raise exception 'INVALID_REPORT_PERIOD';
+  end if;
+
+  v_period_start := case v_period
+    when 'today' then v_today_start
+    when 'week' then v_today_start - interval '6 days'
+    when 'month' then date_trunc('month', v_local_now) at time zone 'Asia/Taipei'
+    else '-infinity'::timestamptz
+  end;
+
+  select coalesce(sum(payment.amount), 0)::integer
+    into v_collected_amount
+  from (
+    select deposit_paid_amount as amount, deposit_paid_at as paid_at from public.orders
+    union all
+    select balance_paid_amount as amount, balance_paid_at as paid_at from public.orders
+  ) payment
+  where payment.amount > 0
+    and payment.paid_at is not null
+    and payment.paid_at >= v_period_start
+    and payment.paid_at <= v_period_end;
+
+  select coalesce(jsonb_agg(day_row.payload order by day_row.day_start), '[]'::jsonb)
+    into v_trend
+  from (
+    select
+      day_slot.day_start,
+      jsonb_build_object(
+        'date', to_char(day_slot.day_start at time zone 'Asia/Taipei', 'MM/DD'),
+        'amount', coalesce(sum(o.profit_amount), 0),
+        'orders', count(o.id)
+      ) as payload
+    from generate_series(
+      v_today_start - interval '6 days',
+      v_today_start,
+      interval '1 day'
+    ) as day_slot(day_start)
+    left join public.orders o
+      on o.status = 'fulfilled'
+      and o.fulfilled_at >= day_slot.day_start
+      and o.fulfilled_at < day_slot.day_start + interval '1 day'
+    group by day_slot.day_start
+  ) day_row;
+
+  select jsonb_build_object(
+    'period', v_period,
+    'period_start', v_period_start,
+    'period_end', v_period_end,
+    'earned_shipping_amount', coalesce(sum(o.profit_amount) filter (
+      where o.status = 'fulfilled'
+        and o.fulfilled_at > v_recent_fulfilled_cutoff
+    ), 0),
+    'earned_orders', count(*) filter (
+      where o.status = 'fulfilled'
+        and o.fulfilled_at > v_recent_fulfilled_cutoff
+    ),
+    'estimated_shipping_amount', coalesce(sum(o.profit_amount) filter (
+      where o.status in ('pending_deposit', 'open', 'ready_pickup')
+    ), 0),
+    'estimated_orders', count(*) filter (
+      where o.status in ('pending_deposit', 'open', 'ready_pickup')
+    ),
+    'collected_amount', v_collected_amount,
+    'outstanding_amount', coalesce(sum(
+      greatest(o.total_amount - o.deposit_paid_amount - o.balance_paid_amount, 0)
+    ) filter (
+      where o.status in ('pending_deposit', 'open', 'ready_pickup')
+    ), 0),
+    'outstanding_orders', count(*) filter (
+      where o.status in ('pending_deposit', 'open', 'ready_pickup')
+        and o.total_amount - o.deposit_paid_amount - o.balance_paid_amount > 0
+    ),
+    'daily_shipping', v_trend
+  ) into v_result
+  from public.orders o;
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.admin_operating_report(text) from public;
+grant execute on function public.admin_operating_report(text) to authenticated;
+
+-- The quoted total remains available for audit when the final purchase amount changes.
+alter table public.orders
+  add column if not exists quoted_total_amount integer,
+  add column if not exists price_adjusted_at timestamptz,
+  add column if not exists price_adjusted_by uuid references auth.users(id) on delete set null;
+
+create or replace function public.admin_mark_order_ready_for_pickup(
+  p_order_id uuid,
+  p_final_total_amount integer,
+  p_reason text default null
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders;
+  v_delta integer;
+  v_paid_amount integer;
+  v_reason text := nullif(trim(coalesce(p_reason, '')), '');
+begin
+  if not public.is_admin_user() then
+    raise exception 'ADMIN_REQUIRED' using errcode = '42501';
+  end if;
+  if coalesce(p_final_total_amount, 0) <= 0 then
+    raise exception 'FINAL_TOTAL_REQUIRED';
+  end if;
+
+  select * into v_order from public.orders where id = p_order_id for update;
+  if not found then
+    raise exception 'ORDER_NOT_FOUND';
+  end if;
+  if v_order.status <> 'open' then
+    raise exception 'FINAL_TOTAL_ADJUSTMENT_NOT_ALLOWED';
+  end if;
+
+  v_paid_amount := coalesce(v_order.deposit_paid_amount, 0) + coalesce(v_order.balance_paid_amount, 0);
+  if p_final_total_amount < v_paid_amount then
+    raise exception 'FINAL_TOTAL_BELOW_PAID';
+  end if;
+  if p_final_total_amount <> v_order.total_amount and v_reason is null then
+    raise exception 'PRICE_ADJUSTMENT_REASON_REQUIRED';
+  end if;
+
+  v_delta := p_final_total_amount - v_order.total_amount;
+  perform set_config('app.order_change_reason', coalesce(v_reason, '商品已採買完成'), true);
+
+  update public.orders
+  set quoted_total_amount = case
+        when p_final_total_amount <> v_order.total_amount then coalesce(quoted_total_amount, v_order.total_amount)
+        else quoted_total_amount
+      end,
+      total_amount = p_final_total_amount,
+      profit_amount = profit_amount + v_delta,
+      price_adjusted_at = case when p_final_total_amount <> v_order.total_amount then now() else price_adjusted_at end,
+      price_adjusted_by = case when p_final_total_amount <> v_order.total_amount then auth.uid() else price_adjusted_by end,
+      status = 'ready_pickup'
+  where id = p_order_id
+  returning * into v_order;
+
+  if v_delta <> 0 then
+    insert into public.order_events (order_id, actor_user_id, actor_email, event_type, details)
+    values (
+      v_order.id,
+      auth.uid(),
+      auth.jwt()->>'email',
+      'price_adjusted',
+      jsonb_build_object(
+        'reason', v_reason,
+        'from_total_amount', v_order.quoted_total_amount,
+        'to_total_amount', v_order.total_amount,
+        'amount_delta', v_delta,
+        'profit_amount', v_order.profit_amount
+      )
+    );
+  end if;
+
+  return v_order;
+end;
+$$;
+
+revoke all on function public.admin_mark_order_ready_for_pickup(uuid, integer, text) from public;
+grant execute on function public.admin_mark_order_ready_for_pickup(uuid, integer, text) to authenticated;

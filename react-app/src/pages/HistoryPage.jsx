@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, MapPin, Package, RotateCcw } from "lucide-react";
+import { Archive, ChevronRight, CircleCheckBig, MapPin, Package, ReceiptText, RotateCcw, RotateCw, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import HistoryOrderDetailDrawer from "../components/HistoryOrderDetailDrawer";
@@ -71,7 +71,7 @@ function HistoryOrderCard({
   const remainingItems = Math.max(0, items.length - previewItems.length);
 
   return (
-    <article className={`history-order-card${selected ? " selected" : ""}`}>
+    <article className={`history-order-card order-status-${order.status}${selected ? " selected" : ""}`}>
       <div className="history-order-head">
         <div className="history-order-identity">
           <strong className="history-order-id">訂單 #{shortId}</strong>
@@ -82,7 +82,10 @@ function HistoryOrderCard({
         </StatusBadge>
       </div>
 
-      <div className="history-order-preview" aria-label="商品摘要">
+      <div
+        className={`history-order-preview${previewItems.length === 1 ? " single-product" : ""}`}
+        aria-label="商品摘要"
+      >
         {previewItems.map((item, index) => (
           <div className="history-preview-item" key={`${order.id}-preview-${index}`}>
             <strong>{item.product_name}</strong>
@@ -138,7 +141,6 @@ export default function HistoryPage() {
   const [updatedAt, setUpdatedAt] = useState("--");
   const [message, setMessage] = useState({ text: "", type: "" });
   const [loading, setLoading] = useState(true);
-  const [recordView, setRecordView] = useState("fulfilled");
   const [searchText, setSearchText] = useState("");
   const [period, setPeriod] = useState("6");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -173,24 +175,20 @@ export default function HistoryPage() {
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [period, recordView, searchText]);
+  }, [period, searchText]);
 
-  useEffect(() => {
-    setSelectedOrderId(null);
-    setSelectionByOrder({});
-  }, [recordView]);
-
-  const recentCompletedOrders = useMemo(
-    () => orders.filter((order) => order.status === "fulfilled"),
+  const recordOrders = useMemo(
+    () => orders.filter((order) => order.status === "fulfilled" || order.status === "archived"),
     [orders]
   );
-
-  const archivedOrders = useMemo(
-    () => orders.filter((order) => order.status === "archived"),
-    [orders]
+  const completedCount = useMemo(
+    () => recordOrders.filter((order) => order.status === "fulfilled").length,
+    [recordOrders]
   );
-
-  const recordOrders = recordView === "fulfilled" ? recentCompletedOrders : archivedOrders;
+  const archivedCount = useMemo(
+    () => recordOrders.filter((order) => order.status === "archived").length,
+    [recordOrders]
+  );
 
   const periodOrders = useMemo(
     () => recordOrders.filter((order) => isWithinPeriod(order.created_at, period)),
@@ -306,54 +304,54 @@ export default function HistoryPage() {
   }
 
   const noResultsReason = !recordOrders.length
-    ? recordView === "fulfilled"
-      ? "目前沒有近期完成訂單。"
-      : "目前沒有已封存的歷史紀錄。"
+    ? "目前沒有已結案訂單。"
     : searchText.trim()
     ? "找不到符合搜尋條件的訂單。"
     : "所選期間內沒有符合的訂單紀錄。";
 
   return (
-    <MemberLayout title="訂單紀錄" subtitle="查看近期完成與已封存訂單，快速再次購買。" active="history">
+    <MemberLayout title="訂單紀錄" subtitle="查看所有已結案訂單，快速再次購買。" active="history">
       <section className="card history-dashboard" id="historyCard">
         <div className="history-toolbar-head">
-          <div>
+          <div className="history-title-block">
             <span className="eyebrow">Order History</span>
-            <h2>{recordView === "fulfilled" ? "近期完成" : "歷史紀錄"}</h2>
-            <p>共 {filteredOrders.length} 筆，最後更新：{updatedAt}</p>
+            <div className="history-title-row">
+              <span className="history-title-mark" aria-hidden="true"><ReceiptText size={19} /></span>
+              <h2>訂單紀錄</h2>
+            </div>
+            <p>共 {recordOrders.length} 筆已結案訂單，最後更新：{updatedAt}</p>
           </div>
-          <button type="button" className="ghost history-refresh-btn" disabled={loading} onClick={refreshOrders}>
-            {loading ? "更新中..." : "重新整理"}
-          </button>
-        </div>
-
-        <div className="history-record-tabs" role="group" aria-label="訂單紀錄分類">
-          <button
-            type="button"
-            className={recordView === "fulfilled" ? "active" : ""}
-            aria-pressed={recordView === "fulfilled"}
-            onClick={() => setRecordView("fulfilled")}
-          >
-            <span>近期完成</span>
-            <strong>{recentCompletedOrders.length}</strong>
-          </button>
-          <button
-            type="button"
-            className={recordView === "archived" ? "active" : ""}
-            aria-pressed={recordView === "archived"}
-            onClick={() => setRecordView("archived")}
-          >
-            <span>歷史紀錄</span>
-            <strong>{archivedOrders.length}</strong>
-          </button>
+          <div className="history-toolbar-actions">
+            <div className="history-status-overview" aria-label="訂單狀態統計">
+              <div className="history-status-stat is-fulfilled" title="已完成訂單">
+                <span className="history-status-icon" aria-hidden="true"><CircleCheckBig size={16} /></span>
+                <span><strong>{completedCount}</strong><small>已完成</small></span>
+              </div>
+              <div className="history-status-stat is-archived" title="已封存訂單">
+                <span className="history-status-icon" aria-hidden="true"><Archive size={16} /></span>
+                <span><strong>{archivedCount}</strong><small>已封存</small></span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="ghost history-refresh-btn"
+              aria-label="重新整理訂單"
+              title="重新整理訂單"
+              disabled={loading}
+              onClick={refreshOrders}
+            >
+              <RotateCw className={loading ? "is-spinning" : ""} size={18} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div className="history-filter-bar">
-          <label className="field history-search-field">
-            <span>搜尋訂單紀錄</span>
+          <label className="history-search-field">
+            <Search size={18} aria-hidden="true" />
             <input
               type="search"
               value={searchText}
+              aria-label="搜尋訂單紀錄"
               placeholder="搜尋商品名稱或訂單編號"
               onChange={(event) => setSearchText(event.target.value)}
             />

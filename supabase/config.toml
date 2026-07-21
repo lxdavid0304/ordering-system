@@ -4,6 +4,9 @@
 # working directory name when running `supabase init`.
 project_id = "izuipqvscpcufcelbqmu"
 
+[functions.line-webhook]
+verify_jwt = false
+
 [api]
 enabled = true
 # Port to use for the API URL.
@@ -387,5 +390,8 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 verify_jwt = false
 
 [functions.lookup-order]
+verify_jwt = false
+
+[functions.line-notify]
 verify_jwt = false
 

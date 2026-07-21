@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:under-300": "node scripts/e2e/order-under-300.mjs",
+    "test:e2e:over-300": "node scripts/e2e/order-over-300.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",

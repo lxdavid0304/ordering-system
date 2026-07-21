@@ -69,6 +69,75 @@
   align-items: center;
 }
 
+.profile-line-section {
+  margin-top: 28px;
+  padding-top: 26px;
+  border-top: 1px solid var(--stroke);
+}
+
+.profile-line-section .profile-section-icon {
+  margin-bottom: 15px;
+}
+
+.profile-line-section .profile-section-icon.line {
+  background: #e6f7ec;
+  color: #168b4f;
+}
+
+.profile-line-code-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 18px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.profile-line-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 18px;
+  color: #31465a;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-line-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #168b4f;
+}
+
+.profile-line-code {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+  padding: 13px;
+  border: 1px solid #b8dfc6;
+  border-radius: 6px;
+  background: #effaf3;
+}
+
+.profile-line-code span,
+.profile-line-code small {
+  color: #587063;
+  font-size: 12px;
+}
+
+.profile-line-code strong {
+  color: #126e3c;
+  font-size: 17px;
+}
+
+.profile-line-section .form-message {
+  margin-top: 14px;
+}
+
 .profile-identity {
   gap: 16px;
   min-width: 0;
