@@ -34,7 +34,7 @@ function getAuthRequestErrorText(error, fallbackText) {
 export default function MemberAuthPanel() {
   const [activeTab, setActiveTab] = useState("login");
   const [showReset, setShowReset] = useState(false);
-  const [loginForm, setLoginForm] = useState({ loginId: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [registerForm, setRegisterForm] = useState(defaultRegisterForm);
   const [resetEmail, setResetEmail] = useState("");
   const [loginMessage, setLoginMessage] = useState({ text: "", type: "" });
@@ -70,20 +70,18 @@ export default function MemberAuthPanel() {
       return;
     }
 
-    const loginId = String(loginForm.loginId || "").trim();
-    if (!loginId || !loginForm.password) {
-      setLoginMessage({ text: "請輸入帳號 / Email 與密碼。", type: "error" });
+    const email = normalizeEmail(loginForm.email);
+    if (!looksLikeEmail(email) || !loginForm.password) {
+      setLoginMessage({ text: "請輸入註冊 Email 與密碼。", type: "error" });
       return;
     }
 
     setBusyAction("login");
     setLoginMessage({ text: "登入中...", type: "" });
-    const result = await loginMember(loginId, loginForm.password);
+    const result = await loginMember(email, loginForm.password);
     if (!result.success) {
       setLoginMessage({
-        text: looksLikeEmail(loginId)
-          ? "登入失敗，請確認 Email 與密碼。"
-          : "登入失敗，請確認帳號與密碼；舊帳號可改用 Email 登入。",
+        text: "登入失敗，請確認 Email 與密碼。",
         type: "error",
       });
       setBusyAction("");
@@ -153,7 +151,7 @@ export default function MemberAuthPanel() {
     }
 
     setRegisterForm(defaultRegisterForm);
-    setLoginForm({ loginId: payload.account, password: "" });
+    setLoginForm({ email: payload.email, password: "" });
     setRegisterMessage({ text: "", type: "" });
     setLoginMessage({
       text: result.requiresEmailConfirmation
@@ -233,15 +231,15 @@ export default function MemberAuthPanel() {
         <div className="member-auth-panel" role="tabpanel">
           <form className="stack" onSubmit={handleLoginSubmit}>
             <label className="field">
-              <span>帳號 / Email</span>
+              <span>註冊 Email</span>
               <input
-                type="text"
-                autoComplete="username"
-                value={loginForm.loginId}
-                placeholder="輸入帳號或 Email"
+                type="email"
+                autoComplete="email"
+                value={loginForm.email}
+                placeholder="輸入註冊 Email"
                 disabled={busy}
                 onChange={(event) =>
-                  setLoginForm((current) => ({ ...current, loginId: event.target.value }))
+                  setLoginForm((current) => ({ ...current, email: event.target.value }))
                 }
               />
             </label>

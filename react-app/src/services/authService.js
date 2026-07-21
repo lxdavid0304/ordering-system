@@ -1,11 +1,4 @@
 import { memberSupabase } from "../lib/supabase";
-import {
-  buildLoginCandidates,
-  looksLikeEmail,
-  normalizeAccount,
-  normalizeEmail,
-  rememberAccountEmail,
-} from "../utils/auth";
 
 export async function upsertMemberProfile(userId, profile) {
   if (!memberSupabase || !userId || !profile) {
@@ -28,36 +21,13 @@ export async function upsertMemberProfile(userId, profile) {
   return { error };
 }
 
-export async function loginMember(loginId, password) {
+export async function loginMember(email, password) {
   if (!memberSupabase) {
     return { success: false, error: new Error("請先設定 config.js") };
   }
 
-  const candidates = buildLoginCandidates(loginId);
-  let lastError = null;
-
-  for (const email of candidates) {
-    const { data, error } = await memberSupabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (!error && data?.session?.user) {
-      const accountFromMeta = normalizeAccount(
-        data.session.user.user_metadata?.account || (!looksLikeEmail(loginId) ? loginId : "")
-      );
-
-      if (accountFromMeta) {
-        rememberAccountEmail(accountFromMeta, data.session.user.email || email);
-      }
-
-      return { success: true, error: null };
-    }
-
-    lastError = error;
-  }
-
-  return { success: false, error: lastError };
+  const { data, error } = await memberSupabase.auth.signInWithPassword({ email, password });
+  return { success: Boolean(data?.session?.user), error };
 }
 
 export async function registerMember({
@@ -107,8 +77,6 @@ export async function registerMember({
       return { success: false, error: profileError };
     }
   }
-
-  rememberAccountEmail(normalizedAccount, normalizedEmail);
 
   if (data?.session) {
     await memberSupabase.auth.signOut();
