@@ -24,3 +24,16 @@ git status --short
 ```
 
 如有 Edge Function 或 migration 變更，還需確認對應 Supabase 部署已完成，並記錄於提交訊息或變更說明。
+
+## 2026-07-26：手機版體驗、LINE 登入與安全取消訂單
+
+本次提交包含：手機版訂購流程與會員選單重設計、LINE Login 回跳與圖示資產、熱門商品與交貨點的行動版配置、桌面主視覺文案同步，以及後台安全刪除取消訂單功能。
+
+交付前已移除可重建的部署 ZIP 與未引用 LINE 原始範本，並將它們加入 `.gitignore`。驗證指令：
+
+```powershell
+git diff --check
+npm --prefix react-app run build
+```
+
+部署注意事項：套用 `20260726000000_admin_delete_order.sql` 後，後台刪除訂單按鈕才會在正式資料庫可用。

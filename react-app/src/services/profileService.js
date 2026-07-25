@@ -3,7 +3,12 @@ import { memberSupabase } from "../lib/supabase";
 function buildFallbackProfile(user) {
   return {
     user_id: user.id,
-    full_name: String(user.user_metadata?.full_name || ""),
+    full_name: String(
+      user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.user_metadata?.preferred_username ||
+        ""
+    ),
     account: String(user.user_metadata?.account || ""),
     email: String(user.user_metadata?.contact_email || user.email || ""),
     real_phone: String(user.user_metadata?.real_phone || ""),

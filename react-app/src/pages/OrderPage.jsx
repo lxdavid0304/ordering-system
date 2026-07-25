@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { House, Package } from "lucide-react";
 import FormMessage from "../components/FormMessage";
 import FavoriteToggleButton from "../components/FavoriteToggleButton";
 import MemberLayout from "../components/MemberLayout";
@@ -53,6 +54,10 @@ export default function OrderPage() {
   const [popularProductsError, setPopularProductsError] = useState("");
   const [popularSearch, setPopularSearch] = useState("");
   const [popularCategory, setPopularCategory] = useState("全部");
+  const [isGuideExpanded, setIsGuideExpanded] = useState(() =>
+    typeof window === "undefined" ? true : window.matchMedia("(min-width: 761px)").matches
+  );
+  const [isPopularOpen, setIsPopularOpen] = useState(true);
   const [favoriteItems, setFavoriteItems] = useState([]);
   const [favoriteBusyKeys, setFavoriteBusyKeys] = useState([]);
   const draftHydratedForUserId = useRef("");
@@ -597,38 +602,67 @@ export default function OrderPage() {
       active="order"
       pageClassName={user ? "order-page" : "order-page guest-order-page"}
     >
-      <section className="order-shopping-hero" aria-label="代購流程">
-        <div className="shopping-hero-copy">
-          <span className="eyebrow">Costco Group Buy</span>
-          <h2>像逛賣場一樣填單，送出前先看清楚總額。</h2>
-          <p>適合大量採買、宿舍交貨與常用商品回購。填完商品後，右側摘要會即時更新預估小計、運費與總金額。</p>
-        </div>
-        <div className="shopping-steps" aria-label="訂購步驟">
-          <div className="shopping-step">
-            <span>1</span>
-            <strong>選交貨點</strong>
-            <small>先確認取貨位置</small>
+      <section className={`order-shopping-hero${isGuideExpanded ? " is-expanded" : ""}`} id="purchaseGuide" aria-label="代購流程">
+        <div className="shopping-hero-scale">
+          <div className="shopping-hero-copy">
+            <span className="eyebrow">Costco Group Buy</span>
+            <h2 className="shopping-hero-desktop-title">把想要的商品放進清單，採買的事交給我們。</h2>
+            <h2 className="shopping-hero-mobile-title">
+              <span>把想要的商品放進清單，</span>
+              <span>採買的事交給我們。</span>
+            </h2>
+            <p className="shopping-hero-mobile-copy">不必出門，也能把日常補貨安排得剛剛好。</p>
+            <p className="shopping-hero-desktop-description">不必出門，也能把日常補貨安排得剛剛好。</p>
           </div>
-          <div className="shopping-step">
-            <span>2</span>
-            <strong>加商品</strong>
-            <small>填名稱、單價、數量</small>
-          </div>
-          <div className="shopping-step">
-            <span>3</span>
-            <strong>送出付款</strong>
-            <small>系統保留草稿</small>
+          <button
+            type="button"
+            className="mobile-guide-toggle"
+            aria-expanded={isGuideExpanded}
+            aria-controls="purchaseGuideDetails"
+            onClick={() => setIsGuideExpanded((current) => !current)}
+          >
+            查看下單步驟 <span aria-hidden="true">{isGuideExpanded ? "⌃" : "⌄"}</span>
+          </button>
+          <div id="purchaseGuideDetails" className="shopping-hero-details" hidden={!isGuideExpanded}>
+            <p className="shopping-hero-mobile-description">填完商品後，訂單摘要會即時更新預估小計、運費與總金額。</p>
+            <div className="shopping-steps" aria-label="訂購步驟">
+              <div className="shopping-step">
+                <span>1</span>
+                <strong>選交貨點</strong>
+                <small>先確認取貨位置</small>
+              </div>
+              <div className="shopping-step">
+                <span>2</span>
+                <strong>加商品</strong>
+                <small>填名稱、單價、數量</small>
+              </div>
+              <div className="shopping-step">
+                <span>3</span>
+                <strong>送出付款</strong>
+                <small>系統保留草稿</small>
+              </div>
+            </div>
           </div>
         </div>
       </section>
-      <section className="popular-catalog" aria-labelledby="popularCatalogTitle">
+      <section className={`popular-catalog${isPopularOpen ? " is-open" : " is-collapsed"}`} id="popularCatalog" aria-labelledby="popularCatalogTitle">
         <div className="popular-catalog-head">
           <div>
             <span className="eyebrow">Popular Picks</span>
             <h2 id="popularCatalogTitle">熱門商品</h2>
             <p>直接加入採買清單，名稱與代購預估價由管理員維護。</p>
           </div>
-          <label className="popular-search-field">
+          <button
+            type="button"
+            className="popular-catalog-toggle"
+            aria-expanded={isPopularOpen}
+            aria-controls="popularCatalogContent"
+            onClick={() => setIsPopularOpen((current) => !current)}
+          >
+            {isPopularOpen ? "收起商品" : "選商品"}
+            <span aria-hidden="true">{isPopularOpen ? "⌃" : "›"}</span>
+          </button>
+          {isPopularOpen ? <label className="popular-search-field">
             <span>搜尋商品</span>
             <input
               type="search"
@@ -636,9 +670,10 @@ export default function OrderPage() {
               placeholder="搜尋名稱、規格或分類"
               onChange={(event) => setPopularSearch(event.target.value)}
             />
-          </label>
+          </label> : null}
         </div>
 
+        <div id="popularCatalogContent" hidden={!isPopularOpen}>
         {popularCategories.length > 1 ? (
           <div className="popular-category-tabs" role="group" aria-label="商品分類">
             {popularCategories.map((category) => (
@@ -717,18 +752,12 @@ export default function OrderPage() {
                       <h3>{product.product_name}</h3>
                       {product.specification ? <p>{product.specification}</p> : null}
                     </div>
-                    <div className="popular-product-price">
-                      <span>
-                        {product.unit_price_min !== null &&
-                        product.unit_price_min !== undefined &&
-                        Number(product.unit_price_min) < Number(product.unit_price)
-                          ? "代購價範圍"
-                          : "代購價"}
-                      </span>
-                      <strong>{formatPriceRange(product.unit_price_min, product.unit_price)}</strong>
-                      <small>含運價</small>
-                    </div>
-                    <div className="popular-quantity-control" aria-label={`${product.product_name}數量`}>
+                    <div className="popular-product-meta">
+                      <div className="popular-product-price">
+                        <span>含運價</span>
+                        <strong>{formatPriceRange(product.unit_price_min, product.unit_price)}</strong>
+                      </div>
+                      <div className="popular-quantity-control" aria-label={`${product.product_name}數量`}>
                       <button
                         type="button"
                         disabled={popularProductsLoading || isSubmitting || selectedQuantity <= 0}
@@ -755,6 +784,7 @@ export default function OrderPage() {
                       >
                         +
                       </button>
+                      </div>
                     </div>
                     {product.costco_url ? (
                       <a
@@ -772,6 +802,7 @@ export default function OrderPage() {
             })}
           </div>
         )}
+        </div>
       </section>
       <div className="order-workspace">
         <section className="card workspace-form" id="orderFormCard">
@@ -781,9 +812,11 @@ export default function OrderPage() {
                 <span className="eyebrow">Shopping List</span>
                 <h2>本次採買清單</h2>
               </div>
-              <div className="order-form-count">
-                <strong>{filledItemCount}</strong>
-                <span>項商品</span>
+              <div className="mobile-order-status" aria-label="目前狀態">
+                <span>目前狀態</span>
+                <StatusBadge kind={isOpen ? "open" : "closed"}>
+                  {schedule ? (isOpen ? "Open" : "Closed") : "載入中"}
+                </StatusBadge>
               </div>
             </div>
             {authLoading ? (
@@ -818,7 +851,7 @@ export default function OrderPage() {
               </div>
             </div>
 
-            <div className="grid delivery-location-grid">
+            <div className="grid delivery-location-grid desktop-delivery-location-grid">
               <label className="field delivery-location-field">
                 <span>運送地址</span>
                 <select
@@ -853,6 +886,33 @@ export default function OrderPage() {
                 + 新增商品
               </button>
             </div>
+            <label className="field mobile-cart-location">
+              <span className="mobile-cart-location-label">
+                <span className="mobile-cart-location-icon" aria-hidden="true">
+                  <House size={16} strokeWidth={2.4} />
+                  <Package size={9} strokeWidth={2.8} />
+                </span>
+                交貨點
+              </span>
+              <select
+                value={deliveryLocation}
+                required
+                disabled={controlsDisabled}
+                onChange={(event) => {
+                  setDeliveryLocation(event.target.value);
+                  if (!isSubmitting) {
+                    resetIdempotencyKey();
+                  }
+                }}
+              >
+                <option value="">請選擇交貨點</option>
+                {deliveryLocations.map((location) => (
+                  <option key={location} value={location}>
+                    {location}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="item-header">
               <span>商品名稱</span>
               <span>單價</span>
@@ -924,6 +984,7 @@ export default function OrderPage() {
           </form>
         </section>
         <aside
+          id="orderSummaryPanel"
           className={`cart-summary-panel${user ? "" : " guest-auth-panel"}`}
           aria-label={user ? "訂單摘要" : "會員登入"}
         >
@@ -977,6 +1038,18 @@ export default function OrderPage() {
           )}
         </aside>
       </div>
+      {user ? <div className="mobile-order-bar" aria-label="訂單快速摘要">
+        <span>
+          <strong>已選 {filledItemCount} 項</strong>
+          <small>預估 {formatCurrency(orderAmounts.finalTotalAmount)}</small>
+        </span>
+        <button
+          type="button"
+          onClick={() => document.getElementById("orderSummaryPanel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        >
+          查看訂單
+        </button>
+      </div> : null}
     </MemberLayout>
   );
 }

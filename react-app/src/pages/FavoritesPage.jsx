@@ -179,6 +179,7 @@ export default function FavoritesPage() {
       title="常用商品"
       subtitle="收藏常買商品，調整數量後快速加入本次採買清單。"
       active="favorites"
+      pageClassName="favorites-page"
     >
       <section className="favorites-page-section">
         <header className="favorites-toolbar">

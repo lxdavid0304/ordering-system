@@ -96,6 +96,11 @@ export async function updateAdminOrder(orderId, payload, reason = "") {
   return { ...result, data: order || result.data };
 }
 
+export async function deleteAdminOrder(orderId) {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_delete_order", { p_order_id: orderId });
+}
+
 export async function markAdminOrderReadyForPickup(orderId, finalTotalAmount, reason = "") {
   if (!adminSupabase) return missingClient();
   const result = await adminSupabase.rpc("admin_mark_order_ready_for_pickup", {

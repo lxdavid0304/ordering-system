@@ -8,11 +8,14 @@ import AdminSettingsPage from "./pages/AdminSettingsPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import FavoritesPage from "./pages/FavoritesPage";
 import HistoryPage from "./pages/HistoryPage";
+import LineAuthCallbackPage from "./pages/LineAuthCallbackPage";
 import OrderPage from "./pages/OrderPage";
 import PaymentPage from "./pages/PaymentPage";
 import PendingOrderPage from "./pages/PendingOrderPage";
+import PopularProductsPage from "./pages/PopularProductsPage";
 import ProfilePage from "./pages/ProfilePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import RulesPage from "./pages/RulesPage";
 
 export default function App() {
   return (
@@ -20,6 +23,9 @@ export default function App() {
       <Route path="/" element={<Navigate to="/order" replace />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/order" element={<OrderPage />} />
+      <Route path="/auth/callback" element={<LineAuthCallbackPage />} />
+      <Route path="/popular" element={<PopularProductsPage />} />
+      <Route path="/rules" element={<RulesPage />} />
       <Route
         path="/history"
         element={

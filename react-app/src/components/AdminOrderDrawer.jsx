@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Check, ChevronRight, Clock3, CreditCard, Package, ReceiptText, Save, UserRound, X } from "lucide-react";
+import { Bell, Check, ChevronRight, Clock3, CreditCard, Package, ReceiptText, Save, Trash2, UserRound, X } from "lucide-react";
 import {
   loadOrderEvents,
   loadOrderNotificationJobs,
@@ -62,7 +62,7 @@ function EventDescription({ event }) {
   return <>訂單資料已更新</>;
 }
 
-export default function AdminOrderDrawer({ order, onClose, onUpdated }) {
+export default function AdminOrderDrawer({ order, deleting = false, onClose, onDeleted, onUpdated }) {
   const [currentOrder, setCurrentOrder] = useState(order);
   const [events, setEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -443,6 +443,16 @@ export default function AdminOrderDrawer({ order, onClose, onUpdated }) {
             <textarea rows="3" value={adminNote} onChange={(event) => setAdminNote(event.target.value)} placeholder="僅管理者看得到" />
             <button type="button" className="admin-secondary-button" disabled={busy === "note"} onClick={handleNoteSave}>
               <Save size={16} />{busy === "note" ? "儲存中" : "儲存備註"}
+            </button>
+          </section>
+
+          <section className="admin-drawer-section admin-danger-zone">
+            <div>
+              <h3><Trash2 size={17} />刪除訂單</h3>
+              <p>僅在確認取消且不需保留紀錄時使用；刪除後無法復原。</p>
+            </div>
+            <button type="button" className="admin-danger-button" disabled={deleting} onClick={onDeleted}>
+              <Trash2 size={16} />{deleting ? "刪除中" : "刪除這筆訂單"}
             </button>
           </section>
 

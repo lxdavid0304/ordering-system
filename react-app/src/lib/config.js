@@ -9,6 +9,10 @@ export const appConfig = {
     import.meta.env.VITE_SUPABASE_ANON_KEY || runtimeConfig.SUPABASE_ANON_KEY || "",
   ADMIN_DEFAULT_EMAIL:
     import.meta.env.VITE_ADMIN_DEFAULT_EMAIL || runtimeConfig.ADMIN_DEFAULT_EMAIL || "",
+  LINE_LOGIN_ENABLED:
+    import.meta.env.VITE_LINE_LOGIN_ENABLED === "true" || runtimeConfig.LINE_LOGIN_ENABLED === true,
+  LINE_AUTH_PROVIDER:
+    import.meta.env.VITE_LINE_AUTH_PROVIDER || runtimeConfig.LINE_AUTH_PROVIDER || "custom:line",
 };
 
 export const configOk = Boolean(appConfig.SUPABASE_URL && appConfig.SUPABASE_ANON_KEY);

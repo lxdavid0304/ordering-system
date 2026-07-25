@@ -1,9 +1,13 @@
+import { MailCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import FormMessage from "./FormMessage";
 import { configOk } from "../lib/config";
 import {
   getRegistrationErrorText,
+  getLoginErrorText,
+  getLineLoginErrorText,
   loginMember,
+  loginMemberWithLine,
   registerMember,
   requestPasswordReset,
 } from "../services/authService";
@@ -40,6 +44,8 @@ export default function MemberAuthPanel() {
   const [loginMessage, setLoginMessage] = useState({ text: "", type: "" });
   const [registerMessage, setRegisterMessage] = useState({ text: "", type: "" });
   const [resetMessage, setResetMessage] = useState({ text: "", type: "" });
+  const [lineLoginMessage, setLineLoginMessage] = useState({ text: "", type: "" });
+  const [verificationEmail, setVerificationEmail] = useState("");
   const [busyAction, setBusyAction] = useState("");
 
   const busy = Boolean(busyAction);
@@ -81,7 +87,7 @@ export default function MemberAuthPanel() {
     const result = await loginMember(email, loginForm.password);
     if (!result.success) {
       setLoginMessage({
-        text: "登入失敗，請確認 Email 與密碼。",
+        text: getLoginErrorText(result.error),
         type: "error",
       });
       setBusyAction("");
@@ -135,32 +141,60 @@ export default function MemberAuthPanel() {
 
     setBusyAction("register");
     setRegisterMessage({ text: "建立會員中...", type: "" });
-    const result = await registerMember({
-      fullName: payload.fullName,
-      account: payload.account,
-      phone: payload.phone,
-      email: payload.email,
-      password: payload.password,
-      emailRedirectTo: `${window.location.origin}/order`,
-    });
+    try {
+      const result = await registerMember({
+        fullName: payload.fullName,
+        account: payload.account,
+        phone: payload.phone,
+        email: payload.email,
+        password: payload.password,
+        emailRedirectTo: `${window.location.origin}/order`,
+      });
 
-    if (!result.success) {
-      setRegisterMessage({ text: getRegistrationErrorText(result.error), type: "error" });
+      if (!result.success) {
+        setRegisterMessage({ text: getRegistrationErrorText(result.error), type: "error" });
+        return;
+      }
+
+      setRegisterForm(defaultRegisterForm);
+      setLoginForm({ email: payload.email, password: "" });
+      setRegisterMessage({ text: "", type: "" });
+      setVerificationEmail(result.requiresEmailConfirmation ? payload.email : "");
+      setLoginMessage(
+        result.requiresEmailConfirmation
+          ? { text: "", type: "" }
+          : { text: "註冊成功，請使用註冊 Email 與密碼登入。", type: "success" },
+      );
+      setActiveTab("login");
+    } catch (error) {
+      setRegisterMessage({ text: getRegistrationErrorText(error), type: "error" });
+    } finally {
       setBusyAction("");
+    }
+  }
+
+  async function handleLineLogin() {
+    if (!configOk) {
+      setLineLoginMessage({ text: "會員服務尚未完成設定。", type: "error" });
       return;
     }
 
-    setRegisterForm(defaultRegisterForm);
-    setLoginForm({ email: payload.email, password: "" });
-    setRegisterMessage({ text: "", type: "" });
-    setLoginMessage({
-      text: result.requiresEmailConfirmation
-        ? "註冊完成，請先到 Email 點擊驗證連結，再回來登入。"
-        : "註冊成功，請使用新帳號登入。",
-      type: "success",
-    });
-    setActiveTab("login");
-    setBusyAction("");
+    setBusyAction("line");
+    setLineLoginMessage({ text: "正在開啟 LINE 登入...", type: "" });
+
+    try {
+      const result = await loginMemberWithLine(`${window.location.origin}/auth/callback`);
+      if (!result.success) {
+        setLineLoginMessage({ text: getLineLoginErrorText(result.error), type: "error" });
+        return;
+      }
+
+      setLineLoginMessage({ text: "正在前往 LINE 驗證...", type: "" });
+    } catch (error) {
+      setLineLoginMessage({ text: getLineLoginErrorText(error), type: "error" });
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function handleResetSubmit(event) {
@@ -227,16 +261,27 @@ export default function MemberAuthPanel() {
         </button>
       </div>
 
+      {verificationEmail ? (
+        <section className="member-auth-verification" role="status" aria-live="polite">
+          <MailCheck size={24} aria-hidden="true" />
+          <div>
+            <strong>請完成 Email 驗證</strong>
+            <p>驗證信已寄到 <b>{verificationEmail}</b>，請開啟信件並按下「驗證 Email」。</p>
+            <p>驗證完成後會自動回到訂購網站，之後可用此 Email 與密碼登入。</p>
+          </div>
+        </section>
+      ) : null}
+
       {activeTab === "login" ? (
         <div className="member-auth-panel" role="tabpanel">
           <form className="stack" onSubmit={handleLoginSubmit}>
             <label className="field">
-              <span>註冊 Email</span>
+              <span>登入 Email</span>
               <input
                 type="email"
                 autoComplete="email"
                 value={loginForm.email}
-                placeholder="輸入註冊 Email"
+                placeholder="請輸入註冊時填寫的 Email"
                 disabled={busy}
                 onChange={(event) =>
                   setLoginForm((current) => ({ ...current, email: event.target.value }))
@@ -257,10 +302,17 @@ export default function MemberAuthPanel() {
               />
             </label>
             <button type="submit" className="primary member-auth-submit" disabled={busy}>
-              {busyAction === "login" ? "登入中..." : "登入並開始填單"}
+              {busyAction === "login" ? "登入中..." : "登入"}
             </button>
             <FormMessage text={loginMessage.text} type={loginMessage.type} />
           </form>
+
+          <div className="member-auth-divider" aria-hidden="true"><span>或</span></div>
+          <button type="button" className="member-auth-line-button" disabled={busy} onClick={handleLineLogin}>
+            <img className="member-auth-line-icon" src="/assets/line-login-icon.png" alt="" aria-hidden="true" />
+            {busyAction === "line" ? "LINE登入中..." : "使用LINE登入"}
+          </button>
+          <FormMessage text={lineLoginMessage.text} type={lineLoginMessage.type} />
 
           <button
             type="button"

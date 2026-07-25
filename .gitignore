@@ -1,6 +1,8 @@
 dist/
 react-app/node_modules/
 react-app/dist/
+dist-*.zip
+assets/line-login/
 supabase/.temp/
 node-server*.log
 r.end('ok')).listen(5173

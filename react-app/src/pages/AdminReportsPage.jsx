@@ -107,11 +107,11 @@ export default function AdminReportsPage() {
         {message ? <p className="admin-report-message" role="alert">{message}</p> : null}
         <div className={`admin-report-metrics${loading ? " is-loading" : ""}`} aria-live="polite">
           <ReportMetric
-            icon={CircleDollarSign}
-            tone="profit"
-            label="近 7 日已賺運費"
-            value={report.earned_shipping_amount}
-            meta={`${report.earned_orders} 筆完成訂單`}
+            icon={TriangleAlert}
+            tone="outstanding"
+            label="待收款"
+            value={report.outstanding_amount}
+            meta={`${report.outstanding_orders} 筆待確認`}
           />
           <ReportMetric
             icon={PackageOpen}
@@ -128,11 +128,11 @@ export default function AdminReportsPage() {
             meta="訂金與尾款"
           />
           <ReportMetric
-            icon={TriangleAlert}
-            tone="outstanding"
-            label="待收款"
-            value={report.outstanding_amount}
-            meta={`${report.outstanding_orders} 筆待確認`}
+            icon={CircleDollarSign}
+            tone="profit"
+            label="近 7 日已收運費"
+            value={report.earned_shipping_amount}
+            meta={`${report.earned_orders} 筆完成訂單`}
           />
         </div>
       </section>

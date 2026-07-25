@@ -63,7 +63,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <MemberLayout title="修改密碼" active="profile">
+    <MemberLayout title="修改密碼" active="profile" pageClassName="member-profile-page">
       <section className="card profile-card" id="changePasswordCard">
         <div className="panel-header">
           <div>

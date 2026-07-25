@@ -15,6 +15,7 @@ import AdminLayout from "../components/AdminLayout";
 import AdminOrderDrawer from "../components/AdminOrderDrawer";
 import {
   bulkUpdateOrders,
+  deleteAdminOrder,
   drainLineNotifications,
   exportAdminOrders,
   loadAdminOrders,
@@ -57,6 +58,9 @@ function escapeCsv(value) {
 
 function getAdminError(error) {
   const raw = String(error?.message || "");
+  if (raw.includes("admin_delete_order")) {
+    return "刪除訂單功能尚未套用到資料庫，請先執行最新 Supabase migration。";
+  }
   if (raw.includes("Could not find the function") || raw.includes("admin_list_orders")) {
     return "後台資料庫功能尚未更新，請先執行最新 Supabase migration。";
   }
@@ -90,6 +94,7 @@ export default function AdminPage() {
   const [message, setMessage] = useState({ text: "", type: "" });
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [deletingOrderId, setDeletingOrderId] = useState("");
   const [newOrdersAvailable, setNewOrdersAvailable] = useState(false);
 
   const requestFilters = useMemo(
@@ -267,6 +272,30 @@ export default function AdminPage() {
     setRefreshKey((current) => current + 1);
   }
 
+  async function handleDeleteOrder(order) {
+    const orderLabel = `${order.customer_name}（#${order.id.slice(0, 8)}）`;
+    const confirmed = window.confirm(
+      `確定要刪除 ${orderLabel} 的訂單嗎？\n\n刪除後無法復原，相關商品與通知紀錄也會一併移除。`
+    );
+    if (!confirmed) return;
+
+    setDeletingOrderId(order.id);
+    const { error } = await deleteAdminOrder(order.id);
+    setDeletingOrderId("");
+
+    if (error) {
+      setMessage({ text: getAdminError(error), type: "error" });
+      return;
+    }
+
+    setOrders((current) => current.filter((item) => item.id !== order.id));
+    setTotalOrders((current) => Math.max(0, current - 1));
+    setSelectedIds((current) => current.filter((id) => id !== order.id));
+    setSelectedOrder(null);
+    setMessage({ text: `已刪除 ${orderLabel} 的訂單。`, type: "success" });
+    refreshOrders();
+  }
+
   const topbarActions = (
     <>
       <button type="button" className="admin-icon-button" title="重新整理" aria-label="重新整理" disabled={refreshing} onClick={refreshOrders}>
@@ -281,8 +310,8 @@ export default function AdminPage() {
   return (
     <AdminLayout title="訂單管理" subtitle={`最後更新：${lastUpdated}`} actions={topbarActions}>
       <section className="admin-summary-grid" aria-label="營運摘要">
-        <SummaryCard icon={CalendarDays} label="採買進行中" value={`${summary.open || 0} 筆`} tone="blue" onClick={() => selectSummary("open")} />
         <SummaryCard icon={Bell} label="待確認訂金" value={`${summary.pending_deposit || 0} 筆`} tone="red" onClick={() => selectSummary("pending_deposit")} />
+        <SummaryCard icon={CalendarDays} label="採買進行中" value={`${summary.open || 0} 筆`} tone="blue" onClick={() => selectSummary("open")} />
         <SummaryCard icon={PackageCheck} label="待取貨" value={`${summary.ready_pickup || 0} 筆`} tone="green" onClick={() => selectSummary("ready_pickup")} />
         <SummaryCard icon={WalletCards} label="近 7 日完成" value={`${summary.fulfilled_recent || 0} 筆`} tone="amber" onClick={() => selectSummary("fulfilled")} />
       </section>
@@ -401,7 +430,13 @@ export default function AdminPage() {
       </section>
 
       {selectedOrder ? (
-        <AdminOrderDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} onUpdated={handleOrderUpdated} />
+        <AdminOrderDrawer
+          order={selectedOrder}
+          deleting={deletingOrderId === selectedOrder.id}
+          onClose={() => setSelectedOrder(null)}
+          onDeleted={() => handleDeleteOrder(selectedOrder)}
+          onUpdated={handleOrderUpdated}
+        />
       ) : null}
     </AdminLayout>
   );

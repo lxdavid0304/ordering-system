@@ -1,0 +1,35 @@
+{
+  "size": {
+    "width": 2500,
+    "height": 1686
+  },
+  "selected": true,
+  "name": "代購服務選單",
+  "chatBarText": "開啟服務選單",
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "我要訂購",
+        "uri": "https://stalwart-axolotl-945b6e.netlify.app/order"
+      }
+    },
+    {
+      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "熱門商品與開團中商品",
+        "uri": "https://stalwart-axolotl-945b6e.netlify.app/popular"
+      }
+    },
+    {
+      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "取貨與付款規則",
+        "uri": "https://stalwart-axolotl-945b6e.netlify.app/rules"
+      }
+    }
+  ]
+}

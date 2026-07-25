@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AtSign, BadgeCheck, BellRing, KeyRound, Link2, Mail, Pencil, Phone, Save, ShieldCheck, UserRound, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
@@ -26,8 +26,10 @@ function validateProfile(profile) {
 
 export default function ProfilePage() {
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [profileSnapshot, setProfileSnapshot] = useState(null);
+  const [profilePersisted, setProfilePersisted] = useState(false);
   const logoutTimerRef = useRef(null);
   const [form, setForm] = useState({
     full_name: "",
@@ -42,6 +44,9 @@ export default function ProfilePage() {
   const [lineBusy, setLineBusy] = useState(false);
   const profileReady = Boolean(profileSnapshot && profileSnapshot.full_name && profileSnapshot.account);
   const profileInitial = (form.full_name || form.account || "?").trim().slice(0, 1).toUpperCase();
+  const passwordLoginEnabled = Boolean(
+    user?.app_metadata?.provider === "email" || user?.app_metadata?.providers?.includes("email")
+  );
 
   useEffect(() => {
     let active = true;
@@ -84,6 +89,7 @@ export default function ProfilePage() {
       };
       setProfileSnapshot(nextForm);
       setForm(nextForm);
+      setProfilePersisted(profile.persisted);
       setEditing(!profile.persisted);
       setMessage(
         profile.persisted
@@ -118,6 +124,7 @@ export default function ProfilePage() {
       return;
     }
 
+    const isFirstProfileSetup = !profilePersisted;
     const nextProfile = {
       full_name: form.full_name.trim(),
       account: normalizeAccount(form.account),
@@ -140,6 +147,7 @@ export default function ProfilePage() {
 
     setProfileSnapshot(nextProfile);
     setForm(nextProfile);
+    setProfilePersisted(true);
     setEditing(false);
     setMessage({
       text: result.emailChanged
@@ -147,6 +155,10 @@ export default function ProfilePage() {
         : "會員資料已更新。",
       type: "success",
     });
+
+    if (isFirstProfileSetup) {
+      navigate("/order", { replace: true });
+    }
   }
 
   function cancelEdit() {
@@ -184,7 +196,16 @@ export default function ProfilePage() {
   }
 
   return (
-    <MemberLayout title="會員資料" subtitle="管理聯絡資料與帳戶安全設定。" active="profile" pageClassName="member-profile-page">
+    <MemberLayout
+      title={profilePersisted ? "會員資料" : "完成會員資料"}
+      subtitle={
+        profilePersisted
+          ? "管理聯絡資料與帳戶安全設定。"
+          : "首次登入請填寫聯絡資料，完成後會自動回到填單頁。"
+      }
+      active="profile"
+      pageClassName="member-profile-page"
+    >
       <section className="profile-page-section" id="profileCard" aria-label="會員資料">
         <header className="profile-summary-band">
           <div className="profile-identity">
@@ -219,8 +240,14 @@ export default function ProfilePage() {
               <div className="profile-section-icon"><UserRound size={20} /></div>
               <div>
                 <p className="section-eyebrow">PERSONAL DETAILS</p>
-                <h3 id="profileDetailsTitle">基本資料</h3>
-                <p>此資料會用於訂單聯絡與交貨確認。</p>
+                <h3 id="profileDetailsTitle">
+                  {profilePersisted ? "基本資料" : "完成資料後開始填單"}
+                </h3>
+                <p>
+                  {profilePersisted
+                    ? "此資料會用於訂單聯絡與交貨確認。"
+                    : "LINE 不會提供完整的聯絡資料；請填寫後即可進入訂購系統。"}
+                </p>
               </div>
             </div>
 
@@ -288,10 +315,14 @@ export default function ProfilePage() {
             <p className="section-eyebrow">ACCOUNT SECURITY</p>
             <h3 id="profileSecurityTitle">帳戶安全</h3>
             <p>定期更新密碼，確保你的訂單與會員資料安全。</p>
-            <Link className="ghost profile-security-link" to="/change-password">
-              <KeyRound size={18} />
-              修改登入密碼
-            </Link>
+            {passwordLoginEnabled ? (
+              <Link className="ghost profile-security-link" to="/change-password">
+                <KeyRound size={18} />
+                修改登入密碼
+              </Link>
+            ) : (
+              <p className="profile-security-provider">此帳戶使用 LINE 登入。</p>
+            )}
 
             <div className="profile-line-section">
               <div className="profile-section-icon line"><BellRing size={20} /></div>
