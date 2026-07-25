@@ -16,6 +16,16 @@ function buildFallbackProfile(user) {
   };
 }
 
+export function hasCompletedMemberProfile(profile) {
+  return Boolean(
+    profile?.persisted &&
+      String(profile.full_name || "").trim() &&
+      String(profile.account || "").trim() &&
+      String(profile.email || "").trim() &&
+      String(profile.real_phone || "").trim()
+  );
+}
+
 export async function loadMemberProfile(user) {
   if (!memberSupabase || !user?.id) {
     return {

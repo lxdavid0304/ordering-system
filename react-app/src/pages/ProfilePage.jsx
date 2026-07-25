@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
-import { loadMemberProfile, updateMemberProfile } from "../services/profileService";
+import { hasCompletedMemberProfile, loadMemberProfile, updateMemberProfile } from "../services/profileService";
 import { issueLineLinkCode, loadLineBinding, updateLineNotifications } from "../services/lineService";
 import { looksLikeEmail, normalizeAccount, normalizePhone } from "../utils/auth";
 
@@ -42,7 +42,7 @@ export default function ProfilePage() {
   const [lineLinkCode, setLineLinkCode] = useState(null);
   const [lineMessage, setLineMessage] = useState({ text: "", type: "" });
   const [lineBusy, setLineBusy] = useState(false);
-  const profileReady = Boolean(profileSnapshot && profileSnapshot.full_name && profileSnapshot.account);
+  const profileReady = Boolean(profilePersisted && profileSnapshot && profileSnapshot.full_name && profileSnapshot.account);
   const profileInitial = (form.full_name || form.account || "?").trim().slice(0, 1).toUpperCase();
   const passwordLoginEnabled = Boolean(
     user?.app_metadata?.provider === "email" || user?.app_metadata?.providers?.includes("email")
@@ -89,10 +89,11 @@ export default function ProfilePage() {
       };
       setProfileSnapshot(nextForm);
       setForm(nextForm);
-      setProfilePersisted(profile.persisted);
-      setEditing(!profile.persisted);
+      const isProfileComplete = hasCompletedMemberProfile(profile);
+      setProfilePersisted(isProfileComplete);
+      setEditing(!isProfileComplete);
       setMessage(
-        profile.persisted
+        isProfileComplete
           ? { text: "", type: "" }
           : { text: "請確認會員資料後按一次儲存，以完成會員資料建立。", type: "error" }
       );
@@ -157,7 +158,10 @@ export default function ProfilePage() {
     });
 
     if (isFirstProfileSetup) {
-      navigate("/order", { replace: true });
+      setMessage({ text: "會員資料已完成，正在前往填單頁...", type: "success" });
+      window.setTimeout(() => {
+        navigate("/order", { replace: true });
+      }, 900);
     }
   }
 
@@ -303,7 +307,7 @@ export default function ProfilePage() {
             <div className={`profile-save-row${editing ? "" : " hidden"}`}>
               <button type="submit" className="primary profile-action-button">
                 <Save size={17} />
-                儲存變更
+                {profilePersisted ? "儲存變更" : "儲存並前往填單"}
               </button>
               <span>變更 Email 後，需至新信箱完成驗證。</span>
             </div>

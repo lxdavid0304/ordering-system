@@ -600,7 +600,7 @@ export default function OrderPage() {
       title="Costco 代購填單"
       subtitle="把想買的商品、預估單價與數量一次整理好，我們會依開放時段協助採買。"
       active="order"
-      pageClassName={user ? "order-page" : "order-page guest-order-page"}
+      pageClassName={user ? "order-page order-page-shopping" : "order-page order-page-shopping guest-order-page"}
     >
       <section className={`order-shopping-hero${isGuideExpanded ? " is-expanded" : ""}`} id="purchaseGuide" aria-label="代購流程">
         <div className="shopping-hero-scale">
@@ -957,7 +957,12 @@ export default function OrderPage() {
               />
             </label>
 
-            <div className="total-row">
+            {user ? <div className="total-row mobile-checkout-summary">
+              <div className="mobile-checkout-heading">
+                <span>Checkout</span>
+                <strong>結帳確認</strong>
+                <small>共 {filledItemCount} 項商品</small>
+              </div>
               <div className="order-total-summary">
                 <div className="order-total-line">
                   <span className="total-label">商品小計</span>
@@ -972,6 +977,7 @@ export default function OrderPage() {
                   <span className="total-amount">{formatCurrency(orderAmounts.finalTotalAmount)}</span>
                 </div>
               </div>
+              <p className="mobile-checkout-note">實際採買金額可能因現場價格、缺貨或替代商品調整。</p>
               <button
                 type="submit"
                 className="primary"
@@ -979,12 +985,11 @@ export default function OrderPage() {
               >
                 送出訂單
               </button>
-            </div>
+            </div> : null}
             <FormMessage text={message.text} type={message.type} />
           </form>
         </section>
         <aside
-          id="orderSummaryPanel"
           className={`cart-summary-panel${user ? "" : " guest-auth-panel"}`}
           aria-label={user ? "訂單摘要" : "會員登入"}
         >
@@ -1038,18 +1043,6 @@ export default function OrderPage() {
           )}
         </aside>
       </div>
-      {user ? <div className="mobile-order-bar" aria-label="訂單快速摘要">
-        <span>
-          <strong>已選 {filledItemCount} 項</strong>
-          <small>預估 {formatCurrency(orderAmounts.finalTotalAmount)}</small>
-        </span>
-        <button
-          type="button"
-          onClick={() => document.getElementById("orderSummaryPanel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-        >
-          查看訂單
-        </button>
-      </div> : null}
     </MemberLayout>
   );
 }

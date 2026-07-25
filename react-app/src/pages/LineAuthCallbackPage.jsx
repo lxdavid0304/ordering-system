@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { configOk } from "../lib/config";
 import { memberSupabase } from "../lib/supabase";
+import { hasCompletedMemberProfile, loadMemberProfile } from "../services/profileService";
 
 function readOAuthError() {
   const search = new URLSearchParams(window.location.search);
@@ -40,7 +41,24 @@ export default function LineAuthCallbackPage() {
         if (!active || !session) {
           return;
         }
-        setMessage("LINE 登入完成，正在前往會員資料...");
+        setMessage("LINE 登入完成，正在確認會員資料...");
+
+        const profileResult = await loadMemberProfile(session.user);
+        if (!active) {
+          return;
+        }
+        if (profileResult.error) {
+          setError("LINE 登入完成，但會員資料讀取失敗。請重新登入後再試。");
+          return;
+        }
+
+        if (hasCompletedMemberProfile(profileResult.data)) {
+          setMessage("歡迎回來，正在前往填單頁...");
+          navigate("/order", { replace: true });
+          return;
+        }
+
+        setMessage("首次 LINE 登入，請先完成會員資料...");
         navigate("/profile", { replace: true });
       };
 

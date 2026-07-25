@@ -17,6 +17,86 @@
   --footer-end: #eaf4fb;
 }
 
+/* Mobile catalog: retain every product in a single, swipeable row. */
+@media (max-width: 760px) {
+  .order-page-shopping .popular-catalog.is-open .popular-product-grid,
+  .order-page-shopping .popular-catalog.is-open .popular-product-grid[role="region"] {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(190px, 56%);
+    grid-template-columns: none;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    padding: 2px 0 12px;
+    scroll-padding-inline: 2px;
+    scroll-snap-type: x mandatory;
+    scrollbar-color: #8ba9bf #edf3f8;
+    scrollbar-width: thin;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-grid::-webkit-scrollbar {
+    display: block;
+    height: 6px;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-grid::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: #edf3f8;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-grid::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: #8ba9bf;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-card {
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+
+  /* Reserve the same zones in every card, regardless of product-name length. */
+  .order-page-shopping .popular-catalog.is-open .popular-product-card {
+    height: 290px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-image {
+    height: 130px;
+    flex: 0 0 130px;
+    aspect-ratio: auto;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-body {
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-body > div:first-child {
+    min-height: 60px;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-body h3 {
+    min-height: 39px;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-body p {
+    min-height: 17px;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-product-price strong {
+    white-space: nowrap;
+    font-size: 16px;
+  }
+
+  .order-page-shopping .popular-catalog.is-open .popular-costco-link {
+    min-height: 28px;
+    flex: 0 0 28px;
+  }
+}
+
 /* Warm background variant for pages that use prominent red accents. */
 @media (max-width: 760px) {
   .page.order-page.app-shell.favorites-page,
@@ -122,6 +202,146 @@
   .page-nav:not(.guest-page-nav) .quick-tab:last-child::before {
     background: #ddecf6;
     color: #176fa8;
+  }
+}
+
+/* Phone order landing: the campaign panel becomes the top edge, while the menu stays floating. */
+@media (max-width: 760px) {
+  .page.order-page.app-shell.order-page-shopping {
+    padding: 0 0 calc(28px + env(safe-area-inset-bottom));
+  }
+
+  .order-page-shopping > .hero {
+    position: absolute !important;
+    z-index: 55;
+    top: calc(14px + env(safe-area-inset-top));
+    right: 16px;
+    width: auto;
+    margin: 0;
+  }
+
+  .order-page-shopping > .hero .hero-topbar > div:first-child {
+    display: none;
+  }
+
+  .order-page-shopping > .hero .hero-topbar {
+    justify-content: flex-end;
+    gap: 0;
+  }
+
+  .order-page-shopping .order-shopping-hero {
+    width: 100%;
+    margin: 0 0 14px !important;
+    border-radius: 0 0 16px 16px !important;
+  }
+
+  .order-page-shopping .shopping-hero-scale {
+    min-height: 190px;
+    padding: calc(24px + env(safe-area-inset-top)) 22px 18px;
+    border-radius: 0 0 16px 16px !important;
+  }
+
+  .order-page-shopping .shopping-hero-copy .eyebrow {
+    opacity: 0.82;
+    font-size: 8px;
+  }
+
+  .order-page-shopping .shopping-hero-mobile-title {
+    margin-top: 6px;
+    font-size: clamp(23px, 6.4vw, 25px);
+    line-height: 1.18;
+  }
+
+  .order-page-shopping .shopping-hero-copy .shopping-hero-mobile-copy {
+    margin-top: 7px;
+    font-size: 13px;
+  }
+
+  .order-page-shopping .cart-summary-panel:not(.guest-auth-panel),
+  .order-page-shopping .mobile-order-bar {
+    display: none;
+  }
+
+  .order-page-shopping .total-row.mobile-checkout-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    margin-top: 18px;
+    border: 1px solid #cfdfeb;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #f2faff 0%, #ffffff 68%, #fff8f7 100%);
+    box-shadow: 0 8px 20px rgba(15, 76, 129, 0.07);
+    padding: 14px;
+  }
+
+  .mobile-checkout-heading {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 2px 10px;
+  }
+
+  .mobile-checkout-heading > span {
+    grid-column: 1 / -1;
+    color: #168b8f;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .mobile-checkout-heading strong {
+    color: var(--ink);
+    font-size: 19px;
+  }
+
+  .mobile-checkout-heading small {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .order-page-shopping .mobile-checkout-summary .order-total-summary {
+    width: 100%;
+    min-width: 0;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid #d7e5ee;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.86);
+  }
+
+  .order-page-shopping .mobile-checkout-summary .order-total-summary > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .order-page-shopping .mobile-checkout-summary .order-total-summary > div + div {
+    border-top: 1px solid #e2ebf1;
+  }
+
+  .order-page-shopping .mobile-checkout-summary .order-total-summary > div:last-child {
+    background: #fff7f7;
+  }
+
+  .order-page-shopping .mobile-checkout-summary .total-amount {
+    color: var(--costco-red);
+    font-size: 23px;
+  }
+
+  .mobile-checkout-note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .order-page-shopping .mobile-checkout-summary .primary {
+    width: 100%;
+    min-height: 48px;
   }
 }
 
