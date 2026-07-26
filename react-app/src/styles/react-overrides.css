@@ -537,3 +537,25 @@
   .popular-mini-card h2 { min-height: 48px; font-size: 15px; }
   .popular-mini-card strong { font-size: 20px; }
 }
+
+/* LINE in-app browser: retain the four-card view while giving each card more room. */
+@media (max-width: 960px) {
+  .popular-mini-header,
+  .popular-mini-hero,
+  .popular-mini-content {
+    width: min(1060px, calc(100% - 24px));
+  }
+
+  .popular-mini-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .popular-mini-card > div {
+    padding: 14px;
+  }
+
+  .popular-mini-card h2 {
+    min-height: 0;
+  }
+}

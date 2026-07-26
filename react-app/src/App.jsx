@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AdminProtectedRoute from "./components/AdminProtectedRoute";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminPage from "./pages/AdminPage";
@@ -17,9 +18,39 @@ import ProfilePage from "./pages/ProfilePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import RulesPage from "./pages/RulesPage";
 
+const pageTitles = {
+  "/order": "Costco 代購填單",
+  "/popular": "熱門商品",
+  "/rules": "取貨與付款規則",
+  "/history": "訂單紀錄",
+  "/favorites": "常用商品",
+  "/profile": "會員資料",
+  "/payment": "付款資訊",
+  "/pending-order": "進行中訂單",
+  "/reset-password": "重設密碼",
+  "/change-password": "更新密碼",
+  "/auth/callback": "LINE 登入",
+  "/admin": "後台訂單管理",
+  "/admin/products": "熱門商品管理",
+  "/admin/reports": "後台報表",
+  "/admin/settings": "後台設定",
+};
+
+function RouteTitle() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    document.title = `${pageTitles[pathname] || "Costco 代購"}｜訂購系統`;
+  }, [pathname]);
+
+  return null;
+}
+
 export default function App() {
   return (
-    <Routes>
+    <>
+      <RouteTitle />
+      <Routes>
       <Route path="/" element={<Navigate to="/order" replace />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/order" element={<OrderPage />} />
@@ -106,7 +137,8 @@ export default function App() {
           </AdminProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/order" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/order" replace />} />
+      </Routes>
+    </>
   );
 }

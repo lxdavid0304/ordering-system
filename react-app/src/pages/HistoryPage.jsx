@@ -292,6 +292,9 @@ export default function HistoryPage() {
           product_name: item.product_name || "",
           unit_price: Number(item.unit_price || 0),
           quantity: Number(item.quantity || 1),
+          // Keep the catalog marker so the reordered item remains an included-shipping product.
+          ...(item.catalog_product_id ? { catalog_product_id: item.catalog_product_id } : {}),
+          shipping_fee_per_unit: Number(item.shipping_fee_per_unit || 0),
         };
       }),
     });
