@@ -395,3 +395,6 @@ verify_jwt = false
 [functions.line-notify]
 verify_jwt = false
 
+[functions.flash-food-notify]
+verify_jwt = false
+

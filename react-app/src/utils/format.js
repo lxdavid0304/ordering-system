@@ -23,6 +23,7 @@ export function formatDateTime(value) {
   }
   return parsed.toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei",
+    hour12: false,
   });
 }
 

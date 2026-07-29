@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Clock3, LayoutDashboard, LogOut, Menu, Package, Store, X } from "lucide-react";
+import { BarChart3, Clock3, LayoutDashboard, LogOut, Menu, Package, Store, UtensilsCrossed, X } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -7,6 +7,7 @@ const navItems = [
   { to: "/admin", label: "訂單管理", icon: LayoutDashboard, end: true },
   { to: "/admin/reports", label: "營運報表", icon: BarChart3 },
   { to: "/admin/products", label: "熱門商品", icon: Package },
+  { to: "/admin/flash-food", label: "快閃熱食", icon: UtensilsCrossed },
   { to: "/admin/settings", label: "營業設定", icon: Clock3 },
   { to: "/order", label: "返回前台", icon: Store },
 ];

@@ -6,8 +6,10 @@ import AdminPage from "./pages/AdminPage";
 import AdminProductsPage from "./pages/AdminProductsPage";
 import AdminReportsPage from "./pages/AdminReportsPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
+import AdminFlashFoodPage from "./pages/AdminFlashFoodPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import FavoritesPage from "./pages/FavoritesPage";
+import FlashFoodPage from "./pages/FlashFoodPage";
 import HistoryPage from "./pages/HistoryPage";
 import LineAuthCallbackPage from "./pages/LineAuthCallbackPage";
 import OrderPage from "./pages/OrderPage";
@@ -24,6 +26,7 @@ const pageTitles = {
   "/rules": "取貨與付款規則",
   "/history": "訂單紀錄",
   "/favorites": "常用商品",
+  "/flash-food": "快閃熱食",
   "/profile": "會員資料",
   "/payment": "付款資訊",
   "/pending-order": "進行中訂單",
@@ -34,6 +37,7 @@ const pageTitles = {
   "/admin/products": "熱門商品管理",
   "/admin/reports": "後台報表",
   "/admin/settings": "後台設定",
+  "/admin/flash-food": "快閃熱食開團",
 };
 
 function RouteTitle() {
@@ -70,6 +74,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <FavoritesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/flash-food"
+        element={
+          <ProtectedRoute>
+            <FlashFoodPage />
           </ProtectedRoute>
         }
       />
@@ -134,6 +146,14 @@ export default function App() {
         element={
           <AdminProtectedRoute>
             <AdminSettingsPage />
+          </AdminProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/flash-food"
+        element={
+          <AdminProtectedRoute>
+            <AdminFlashFoodPage />
           </AdminProtectedRoute>
         }
       />

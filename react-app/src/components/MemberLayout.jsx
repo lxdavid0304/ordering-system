@@ -42,6 +42,9 @@ export default function MemberLayout({ title, subtitle, active = "", pageClassNa
                 <NavLink to="/order" className={() => navClassName(active === "order")} onClick={() => setMenuOpen(false)}>
                   填單
                 </NavLink>
+                <NavLink to="/flash-food" className={() => navClassName(active === "flash-food")} onClick={() => setMenuOpen(false)}>
+                  快閃熱食
+                </NavLink>
                 <NavLink to="/pending-order" className={() => navClassName(active === "pending-order")} onClick={() => setMenuOpen(false)}>
                   進行中訂單
                 </NavLink>

@@ -145,7 +145,7 @@ export default function AdminPage() {
       if (!summaryResult.error && summaryResult.data) {
         setSummary(summaryResult.data);
       }
-      setLastUpdated(new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }));
+      setLastUpdated(formatDateTime(new Date().toISOString()));
       setLoading(false);
       setRefreshing(false);
     });
