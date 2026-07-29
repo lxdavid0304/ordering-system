@@ -4,7 +4,7 @@
     "height": 1686
   },
   "selected": true,
-  "name": "代購服務選單",
+  "name": "代購與快閃熱食選單",
   "chatBarText": "開啟服務選單",
   "areas": [
     {
@@ -29,6 +29,14 @@
         "type": "uri",
         "label": "取貨與付款規則",
         "uri": "https://stalwart-axolotl-945b6e.netlify.app/rules"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "快閃熱食",
+        "uri": "https://stalwart-axolotl-945b6e.netlify.app/flash-food"
       }
     }
   ]

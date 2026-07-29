@@ -55,7 +55,7 @@ $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearType
 $red = New-Color "#D92736"
 $blue = New-Color "#1E5D8F"
 $mint = New-Color "#E8F4EE"
-$gray = New-Color "#E7EDF1"
+$peach = New-Color "#FFF1E8"
 $white = [System.Drawing.Color]::White
 $ink = New-Color "#15384D"
 $muted = New-Color "#73808A"
@@ -65,7 +65,7 @@ $graphics.Clear($white)
 $graphics.FillRectangle([System.Drawing.SolidBrush]::new($blue), 0, 0, $width, $topHeight)
 $graphics.FillRectangle([System.Drawing.SolidBrush]::new($mint), 0, $topHeight, $bottomCellWidth, $topHeight)
 $graphics.FillRectangle([System.Drawing.SolidBrush]::new($red), $bottomCellWidth, $topHeight, $bottomCellWidth, $topHeight)
-$graphics.FillRectangle([System.Drawing.SolidBrush]::new($gray), $bottomCellWidth * 2, $topHeight, $bottomCellWidth, $topHeight)
+$graphics.FillRectangle([System.Drawing.SolidBrush]::new($peach), $bottomCellWidth * 2, $topHeight, $bottomCellWidth, $topHeight)
 
 $dividerPen = [System.Drawing.Pen]::new($divider, 10)
 $graphics.DrawLine($dividerPen, 0, $topHeight, $width, $topHeight)
@@ -93,9 +93,9 @@ Draw-ProductIcon $graphics $whitePen 1250 1115
 Draw-CenteredText $graphics (New-Text @(0x71B1, 0x9580, 0x5546, 0x54C1)) $titleFont $whiteBrush 1250 1400
 Draw-CenteredText $graphics (New-Text @(0x958B, 0x5718, 0x4E2D, 0x5546, 0x54C1)) $smallFont $whiteBrush 1250 1510
 
-Draw-CenteredText $graphics "?" $symbolFont $mutedBrush 2083 1120
-Draw-CenteredText $graphics (New-Text @(0x656C, 0x8ACB, 0x671F, 0x5F85)) $titleFont $mutedBrush 2083 1400
-Draw-CenteredText $graphics (New-Text @(0x66F4, 0x591A, 0x670D, 0x52D9, 0x6E96, 0x5099, 0x4E2D)) $smallFont $mutedBrush 2083 1510
+Draw-CenteredText $graphics (New-Text @(0x2668)) $symbolFont $mutedBrush 2083 1120
+Draw-CenteredText $graphics (New-Text @(0x5FEB, 0x9583, 0x71B1, 0x98DF)) $titleFont $inkBrush 2083 1400
+Draw-CenteredText $graphics (New-Text @(0x7ACB, 0x5373, 0x7DDA, 0x4E0A, 0x9EDE, 0x9910)) $smallFont $mutedBrush 2083 1510
 
 $outputDirectory = Split-Path -Parent $outputPath
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
