@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, CalendarClock, ChevronDown, ChevronUp, CircleOff, ClipboardList, Clock3, MapPin, PackageCheck, Pencil, Save, UsersRound } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, ChevronDown, ChevronUp, CircleOff, ClipboardList, Clock3, MapPin, PackageCheck, Pencil, RefreshCw, Save, UsersRound } from "lucide-react";
 import AdminLayout from "../components/AdminLayout";
 import FormMessage from "../components/FormMessage";
-import { cancelFlashFoodCampaign, createFlashFoodCampaign, loadAdminFlashFoodCampaigns, markFlashFoodCampaignReady, resendFlashFoodReadyNotification, updateFlashFoodCampaign } from "../services/flashFoodService";
+import { cancelFlashFoodCampaign, createFlashFoodCampaign, loadAdminFlashFoodCampaigns, loadAdminFlashFoodOperatingReport, markFlashFoodCampaignReady, resendFlashFoodReadyNotification, updateFlashFoodCampaign } from "../services/flashFoodService";
 import {
   FLASH_FOOD_SHIPPING_FEE,
   FLASH_FOOD_MEMBER_PICKUP_LOCATION,
@@ -141,6 +141,52 @@ function buildPickupGroups(orders) {
   }));
 }
 
+const reportPeriods = [
+  ["week", "本週開團"],
+  ["month", "本月開團"],
+  ["all", "所有開團"],
+];
+
+const emptyOperatingReport = {
+  campaigns: [],
+};
+
+function getOperatingReportError(error) {
+  const message = String(error?.message || "");
+  if (message.includes("admin_flash_food_operating_report")) return "快閃熱食報表資料庫尚未更新。";
+  return message || "無法讀取快閃熱食營運報表。";
+}
+
+function FlashFoodOperatingReport({ report, period, loading, message, onPeriodChange, onRefresh }) {
+  const campaigns = Array.isArray(report.campaigns) ? report.campaigns : [];
+
+  return (
+    <section className="flash-operating-report" aria-label="快閃熱食營運報表">
+      <div className="flash-operating-report-head">
+        <div>
+          <span>FLASH FOOD OPERATIONS</span>
+          <h2><BarChart3 size={21} aria-hidden="true" />營運報表</h2>
+          <p>依每次開團時間統計；已送出與已完成訂單皆納入，取消訂單不計入。</p>
+        </div>
+        <button type="button" className="admin-secondary-button flash-report-refresh" onClick={onRefresh} disabled={loading}>
+          <RefreshCw size={16} className={loading ? "is-spinning" : ""} aria-hidden="true" />重新整理
+        </button>
+      </div>
+
+      <div className="flash-report-periods flash-report-periods-three" role="group" aria-label="開團期間">
+        {reportPeriods.map(([value, label]) => <button key={value} type="button" className={period === value ? "active" : ""} aria-pressed={period === value} onClick={() => onPeriodChange(value)}>{label}</button>)}
+      </div>
+
+      {message ? <p className="flash-report-message" role="alert">{message}</p> : null}
+
+      <section className="flash-report-section" aria-labelledby="flash-report-campaigns-title">
+        <div className="flash-report-section-head"><div><span>CAMPAIGN REPORT</span><h3 id="flash-report-campaigns-title">每次開團統計</h3></div><small>{campaigns.length} 團</small></div>
+        <div className={`flash-report-table-wrap${loading ? " is-loading" : ""}`}><table><thead><tr><th>開團活動</th><th>訂單數</th><th>訂購人數</th><th>商品總金額</th><th>運費收入</th></tr></thead><tbody>{campaigns.length ? campaigns.map((campaign) => <tr key={campaign.campaign_id}><td><strong>{campaign.title}</strong><small>{formatFlashFoodDateTime(campaign.open_at)} 開團</small></td><td>{campaign.order_count} 筆</td><td>{campaign.customer_count} 人</td><td><b>${formatCurrency(campaign.product_amount)}</b></td><td>${formatCurrency(campaign.shipping_amount)}</td></tr>) : <tr className="flash-report-empty-row"><td colSpan="5">此期間尚無開團活動。</td></tr>}</tbody></table></div>
+      </section>
+    </section>
+  );
+}
+
 export default function AdminFlashFoodPage() {
   const [form, setForm] = useState(createInitialForm);
   const [campaigns, setCampaigns] = useState([]);
@@ -153,6 +199,10 @@ export default function AdminFlashFoodPage() {
   const [expandedCampaignId, setExpandedCampaignId] = useState("");
   const [expandedPickupManifest, setExpandedPickupManifest] = useState({ campaignId: "", location: "" });
   const [activePanel, setActivePanel] = useState("manage");
+  const [reportPeriod, setReportPeriod] = useState("month");
+  const [operatingReport, setOperatingReport] = useState(emptyOperatingReport);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
 
   const selectedCount = useMemo(
     () => form.menu.filter((item) => item.selected).length,
@@ -189,10 +239,31 @@ export default function AdminFlashFoodPage() {
     setLoading(false);
   }
 
+  async function refreshOperatingReport() {
+    setReportLoading(true);
+    setReportMessage("");
+    const { data, error } = await loadAdminFlashFoodOperatingReport(reportPeriod);
+    if (error || !data) {
+      setOperatingReport(emptyOperatingReport);
+      setReportMessage(getOperatingReportError(error));
+    } else {
+      setOperatingReport({
+        ...emptyOperatingReport,
+        ...data,
+        campaigns: Array.isArray(data.campaigns) ? data.campaigns : [],
+      });
+    }
+    setReportLoading(false);
+  }
+
   useEffect(() => {
     document.title = "快閃熱食開團｜管理後台";
     refreshCampaigns();
   }, []);
+
+  useEffect(() => {
+    if (activePanel === "report") refreshOperatingReport();
+  }, [activePanel, reportPeriod]);
 
   function updateField(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -348,6 +419,9 @@ export default function AdminFlashFoodPage() {
         </div>
 
         <div className="flash-admin-tabs" role="tablist" aria-label="快閃熱食工作區">
+          <button type="button" role="tab" aria-selected={activePanel === "report"} className={activePanel === "report" ? "active" : ""} onClick={() => setActivePanel("report")}>
+            <span>營運報表</span><small>◎</small>
+          </button>
           <button type="button" role="tab" aria-selected={activePanel === "manage"} className={activePanel === "manage" ? "active" : ""} onClick={() => setActivePanel("manage")}>
             <span>管理中</span><small>{campaignPanels.current.length}</small>
           </button>
@@ -436,7 +510,9 @@ export default function AdminFlashFoodPage() {
           </form>
         </section> : null}
 
-        {activePanel !== "create" && activePanel !== "menu" ? <section className="flash-admin-list-panel">
+        {activePanel === "report" ? <FlashFoodOperatingReport report={operatingReport} period={reportPeriod} loading={reportLoading} message={reportMessage} onPeriodChange={setReportPeriod} onRefresh={refreshOperatingReport} /> : null}
+
+        {["manage", "history"].includes(activePanel) ? <section className="flash-admin-list-panel">
           <div className="admin-section-heading">
             <div>
               <span>CAMPAIGN STATUS</span>

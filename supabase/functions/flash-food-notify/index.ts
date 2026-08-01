@@ -89,23 +89,16 @@ function messageFor(eventType: string, campaign: Record<string, unknown>, pickup
   }
   const note = String(campaign.note || "").trim();
   if (eventType === "campaign_opened") {
+    const openAt = new Date(String(campaign.open_at || ""));
+    const isUpcoming = !Number.isNaN(openAt.getTime()) && openAt.getTime() > Date.now();
     return [
-      "🍴 快閃熱食｜現在開放點餐",
+      isUpcoming ? "🍴 快閃熱食｜即將開團" : "🍴 快閃熱食｜現在開放點餐",
       `活動：${title}`,
+      isUpcoming ? `開放時間：${formatCompactDate(campaign.open_at)}` : null,
       `點餐截止：${formatCompactDate(campaign.deadline_at)}`,
       `預估可取餐：${formatCompactDate(campaign.pickup_start_at)}`,
       note || null,
-      "請前往「快閃熱食」選餐，並選擇交貨地點。",
-    ].filter(Boolean).join("\n");
-  }
-  if (eventType === "campaign_opened") {
-    return [
-      "🍴 快閃熱食｜現在開放點餐",
-      title,
-      `截止　${formatCompactDate(campaign.deadline_at)}`,
-      `預估取餐　${formatCompactDate(campaign.pickup_start_at)}`,
-      note || null,
-      "前往「快閃熱食」選餐並選擇交貨地點。",
+      isUpcoming ? "開放後請前往「快閃熱食」選餐並選擇交貨地點。" : "請前往「快閃熱食」選餐，並選擇交貨地點。",
     ].filter(Boolean).join("\n");
   }
   return [
@@ -140,24 +133,36 @@ serve(async (request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const lineToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN");
-  if (!token) return json({ error: "Authentication required" }, 401);
+  const cronSecret = Deno.env.get("FLASH_FOOD_CRON_SECRET");
   if (!supabaseUrl || !serviceKey || !lineToken) return json({ error: "Server not configured" }, 500);
 
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-  const { data: userData, error: userError } = await supabase.auth.getUser(token);
-  if (userError || !userData.user) return json({ error: "Authentication required" }, 401);
-  const admin = await isAdmin(supabase, token);
-
   let campaignId = "";
   let requestedEvent = "";
   let memberOrderNotification = false;
+  let dispatchDueCampaignOpened = false;
   try {
     const body = await request.json();
     campaignId = typeof body?.campaign_id === "string" ? body.campaign_id : "";
     requestedEvent = typeof body?.event_type === "string" ? body.event_type : "";
     memberOrderNotification = body?.member_order_notification === true;
+    dispatchDueCampaignOpened = body?.dispatch_due_campaign_opened === true;
   } catch {
     // Empty body is allowed for an admin retry of all pending jobs.
+  }
+
+  if (dispatchDueCampaignOpened && (!cronSecret || request.headers.get("x-flash-food-cron-secret") !== cronSecret)) {
+    return json({ error: "Scheduled dispatch is not authorized" }, 403);
+  }
+
+  let callerUserId = "";
+  let admin = dispatchDueCampaignOpened;
+  if (!dispatchDueCampaignOpened) {
+    if (!token) return json({ error: "Authentication required" }, 401);
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !userData.user) return json({ error: "Authentication required" }, 401);
+    callerUserId = userData.user.id;
+    admin = await isAdmin(supabase, token);
   }
 
   if (!admin && (!campaignId || !memberOrderNotification)) {
@@ -172,8 +177,9 @@ serve(async (request) => {
     .order("created_at", { ascending: true })
     .limit(100);
   if (campaignId) query = query.eq("campaign_id", campaignId);
-  if (admin && requestedEvent) query = query.eq("event_type", requestedEvent);
-  if (!admin) query = query.eq("user_id", userData.user.id).in("event_type", ["order_submitted", "order_updated"]);
+  if (dispatchDueCampaignOpened) query = query.eq("event_type", "campaign_opened");
+  else if (admin && requestedEvent) query = query.eq("event_type", requestedEvent);
+  if (!admin) query = query.eq("user_id", callerUserId).in("event_type", ["order_submitted", "order_updated"]);
   const { data: jobs, error } = await query;
   if (error) return json({ error: "Notification queue unavailable" }, 500);
 
@@ -189,7 +195,7 @@ serve(async (request) => {
 
     const [{ data: binding }, { data: campaign }, { data: order }] = await Promise.all([
       supabase.from("member_line_bindings").select("line_user_id, notifications_enabled, blocked_at").eq("user_id", job.user_id).maybeSingle(),
-      supabase.from("flash_food_campaigns").select("title, deadline_at, pickup_start_at, pickup_end_at, pickup_ready_at, note").eq("id", job.campaign_id).maybeSingle(),
+      supabase.from("flash_food_campaigns").select("title, open_at, deadline_at, pickup_start_at, pickup_end_at, pickup_ready_at, note").eq("id", job.campaign_id).maybeSingle(),
       supabase.from("flash_food_orders").select("pickup_location").eq("campaign_id", job.campaign_id).eq("user_id", job.user_id).maybeSingle(),
     ]);
     if (!binding || !binding.notifications_enabled || binding.blocked_at || !campaign) {
@@ -199,6 +205,16 @@ serve(async (request) => {
     }
 
     const payload = job.payload || {};
+    const campaignOpenAt = new Date(String(campaign.open_at || ""));
+    if (job.event_type === "campaign_opened" && (Number.isNaN(campaignOpenAt.getTime()) || campaignOpenAt.getTime() > Date.now())) {
+      await supabase.from("flash_food_notification_jobs").update({
+        status: "pending",
+        attempts: Number(job.attempts || 0),
+        error_message: "Waiting for the campaign open time",
+        updated_at: new Date().toISOString(),
+      }).eq("id", job.id);
+      continue;
+    }
     const pickupLocation = job.event_type === "order_submitted" || job.event_type === "order_updated"
       ? String(payload.pickup_location || order?.pickup_location || "")
       : order?.pickup_location || "";

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, CheckCircle2, Clock3, MapPin, Minus, Plus, ReceiptText, ShoppingBag, UtensilsCrossed } from "lucide-react";
+import { CalendarClock, Clock3, House, MapPin, Minus, Package, Plus, ShoppingBag, Trash2, UtensilsCrossed } from "lucide-react";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
@@ -12,7 +12,6 @@ import {
   formatFlashFoodDateTime,
   getFlashFoodProductMeta,
   getFlashFoodCampaignState,
-  getFlashFoodCampaignStateLabel,
   withFlashFoodTotal,
 } from "../utils/flashFood";
 import { formatCurrency } from "../utils/format";
@@ -26,37 +25,43 @@ function makeInitialQuantities(campaign) {
 }
 
 function CampaignRail({ campaigns, selectedId, onSelect, clock }) {
+  const now = new Date(clock);
+  const currentCampaign = campaigns.find((campaign) => getFlashFoodCampaignState(campaign, now) === "open");
+  const upcomingCampaign = campaigns.find((campaign) => getFlashFoodCampaignState(campaign, now) === "scheduled");
+
   return (
     <aside className="flash-food-campaign-rail" aria-label="快閃活動">
       <div className="flash-food-rail-head">
-        <span>CAMPAIGNS</span>
-        <h2>本週開團活動</h2>
+        <span>FLASH FOOD TIME</span>
+        <h2>開團時間</h2>
       </div>
-      <div className="flash-food-rail-list">
-        {campaigns.length ? campaigns.map((campaign) => {
-          const state = getFlashFoodCampaignState(campaign, new Date(clock));
-          const selectable = state === "open";
-          return (
-            <button
-              type="button"
-              className={`flash-food-rail-card ${state}${selectedId === campaign.id ? " selected" : ""}`}
-              key={campaign.id}
-              onClick={() => selectable && onSelect(campaign.id)}
-              disabled={!selectable}
-            >
-              <span className={`flash-state-badge ${state}`}>{getFlashFoodCampaignStateLabel(state)}</span>
-              <strong>{campaign.title}</strong>
-              <small><Clock3 size={13} aria-hidden="true" /> 截止 {formatFlashFoodDateTime(campaign.deadline_at)}</small>
-              <small><MapPin size={13} aria-hidden="true" /> {state === "ready" ? `實際取餐 ${formatFlashFoodDateTime(campaign.pickup_ready_at)}` : `預估取餐 ${formatFlashFoodDateTime(campaign.pickup_start_at)}`}</small>
+      {currentCampaign || upcomingCampaign ? (
+        <div className="flash-food-rail-status" aria-label="目前與即將開團時間">
+          {currentCampaign ? (
+            <button type="button" className={`flash-food-rail-status-card open${selectedId === currentCampaign.id ? " selected" : ""}`} onClick={() => onSelect(currentCampaign.id)}>
+              <span>當下開團</span>
+              <strong>{currentCampaign.title}</strong>
+              <small><CalendarClock size={13} aria-hidden="true" /> 開放 {formatFlashFoodDateTime(currentCampaign.open_at)}</small>
+              <small><Clock3 size={13} aria-hidden="true" /> 截止 {formatFlashFoodDateTime(currentCampaign.deadline_at)}</small>
+              <small><MapPin size={13} aria-hidden="true" /> 預估取餐 {formatFlashFoodDateTime(currentCampaign.pickup_start_at)} 至 {formatFlashFoodDateTime(currentCampaign.pickup_end_at)}</small>
             </button>
-          );
-        }) : (
-          <div className="flash-food-rail-empty">
-            <strong>目前尚無開放活動</strong>
-            <p>新的快閃熱食開團後，會在這裡顯示。</p>
-          </div>
-        )}
-      </div>
+          ) : null}
+          {upcomingCampaign ? (
+            <div className="flash-food-rail-status-card scheduled">
+              <span>即將開團</span>
+              <strong>{upcomingCampaign.title}</strong>
+              <small><CalendarClock size={13} aria-hidden="true" /> {formatFlashFoodDateTime(upcomingCampaign.open_at)} 開放</small>
+              <small><Clock3 size={13} aria-hidden="true" /> 截止 {formatFlashFoodDateTime(upcomingCampaign.deadline_at)}</small>
+              <small><MapPin size={13} aria-hidden="true" /> 預估取餐 {formatFlashFoodDateTime(upcomingCampaign.pickup_start_at)} 至 {formatFlashFoodDateTime(upcomingCampaign.pickup_end_at)}</small>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flash-food-rail-empty flash-food-rail-awaiting">
+          <strong>敬請期待</strong>
+          <p>目前沒有開放或即將開團的快閃熱食活動。</p>
+        </div>
+      )}
     </aside>
   );
 }
@@ -162,8 +167,14 @@ function OrderBoard({ campaign, quantities, pickupLocation, note, onQuantityChan
       <div className="flash-food-order-selection">
         <span>YOUR PICKS</span>
         <h2>本次點餐</h2>
-        <label className="flash-food-pickup-select">
-          <span><MapPin size={15} aria-hidden="true" /> 交貨地點</span>
+        <label className="flash-food-pickup-select flash-food-mobile-cart-location">
+          <span className="flash-food-pickup-label">
+            <span className="flash-food-pickup-icon" aria-hidden="true">
+              <House size={16} strokeWidth={2.4} />
+              <Package size={9} strokeWidth={2.8} />
+            </span>
+            交貨地點
+          </span>
           <select value={pickupLocation} onChange={(event) => onPickupLocationChange(event.target.value)}>
             <option value="">請選擇交貨地點</option>
             {flashFoodPickupLocations.map((location) => <option value={location} key={location}>{location}</option>)}
@@ -173,13 +184,25 @@ function OrderBoard({ campaign, quantities, pickupLocation, note, onQuantityChan
           <ul>
             {selectedItems.map((item) => {
               const quantity = Number(quantities[item.id]);
-              return <li key={item.id}><span>{item.product_name} <b>× {quantity}</b></span><strong>${formatCurrency((Number(item.unit_price) + Number(campaign.shipping_fee_per_unit)) * quantity)}</strong></li>;
+              return (
+                <li key={item.id}>
+                  <span>{item.product_name} <b>× {quantity}</b></span>
+                  <div className="flash-food-order-item-actions">
+                    <div className="flash-quantity-control" aria-label={`${item.product_name} 數量`}>
+                      <button type="button" disabled={quantity <= 0} aria-label={`減少 ${item.product_name}`} onClick={() => onQuantityChange(item.id, quantity - 1)}><Minus size={14} /></button>
+                      <span>{quantity}</span>
+                      <button type="button" aria-label={`增加 ${item.product_name}`} onClick={() => onQuantityChange(item.id, quantity + 1)}><Plus size={14} /></button>
+                    </div>
+                    <button type="button" className="flash-food-order-remove" aria-label={`刪除 ${item.product_name}`} onClick={() => onQuantityChange(item.id, 0)}><Trash2 size={15} /></button>
+                    <strong>${formatCurrency((Number(item.unit_price) + Number(campaign.shipping_fee_per_unit)) * quantity)}</strong>
+                  </div>
+                </li>
+              );
             })}
           </ul>
         ) : <p className="flash-food-order-empty">先從上方菜單挑選餐點。</p>}
       </div>
       <div className="flash-food-order-total">
-        <span>已選 {amounts.quantity} 件</span>
         <dl>
           <div className="flash-food-total-row"><dt>餐點總額（已含運費）</dt><dd>${formatCurrency(amounts.total)}</dd></div>
         </dl>
@@ -272,12 +295,6 @@ export default function FlashFoodPage() {
     [displayCampaigns, clock]
   );
   const selectedCampaign = openCampaigns.find((campaign) => campaign.id === selectedCampaignId) || openCampaigns[0] || null;
-  const mobileOrderAmounts = useMemo(() => {
-    if (!selectedCampaign) return null;
-    const items = (selectedCampaign.flash_food_campaign_items || []).filter((item) => item.is_active);
-    return withFlashFoodTotal(calculateFlashFoodAmounts(items, quantitiesByCampaign[selectedCampaign.id] || {}, selectedCampaign.shipping_fee_per_unit));
-  }, [quantitiesByCampaign, selectedCampaign]);
-
   useEffect(() => {
     if (selectedCampaign && selectedCampaign.id !== selectedCampaignId) setSelectedCampaignId(selectedCampaign.id);
   }, [selectedCampaign?.id, selectedCampaignId]);
@@ -363,11 +380,6 @@ export default function FlashFoodPage() {
                 />
               </div> : null}
             </div>
-            {mobileOrderAmounts?.quantity ? <button type="button" className="flash-mobile-order-bar" onClick={() => document.getElementById("flash-food-order-board")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-              <ReceiptText size={18} aria-hidden="true" />
-              <span>已選 {mobileOrderAmounts.quantity} 件</span>
-              <strong>預估 ${formatCurrency(mobileOrderAmounts.total)}</strong>
-            </button> : null}
           </>
         ) : null}
       </section>

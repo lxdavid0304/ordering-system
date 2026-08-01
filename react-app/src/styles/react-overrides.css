@@ -623,10 +623,49 @@
 .flash-admin-layout { padding: 22px; }
 .flash-admin-panel-create,
 .flash-admin-panel-manage,
-.flash-admin-panel-history { grid-template-columns: minmax(0, 1fr); }
+.flash-admin-panel-history,
+.flash-admin-panel-report { grid-template-columns: minmax(0, 1fr); }
 .flash-admin-layout .flash-admin-form-panel,
 .flash-admin-layout .flash-admin-list-panel { box-shadow: none; }
 .flash-admin-list-panel .admin-section-heading { margin-bottom: 2px; }
+
+.flash-operating-report { display: grid; gap: 18px; padding: 25px; border: 1px solid #d8e0e8; border-radius: 18px; background: linear-gradient(135deg, #fff, #f7fbff); }
+.flash-operating-report-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.flash-operating-report-head > div > span, .flash-report-section-head > div > span { color: #c35447; font-size: 11px; font-weight: 900; letter-spacing: .12em; }
+.flash-operating-report-head h2 { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: #173d59; font-size: 22px; }
+.flash-operating-report-head h2 svg { color: #d4514c; }
+.flash-operating-report-head p { max-width: 610px; margin: 0; color: #6d8090; font-size: 13px; line-height: 1.55; }
+.flash-report-refresh { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.flash-report-periods { display: flex; flex-wrap: wrap; gap: 8px; }
+.flash-report-periods button { min-height: 37px; padding: 7px 14px; border: 1px solid #d6e2ea; border-radius: 9px; background: #fff; color: #476477; font: inherit; font-size: 13px; font-weight: 850; cursor: pointer; }
+.flash-report-periods button:hover, .flash-report-periods button.active { border-color: #d5544d; background: #d9524b; color: #fff; }
+.flash-report-message { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fff1f1; color: #ad3f47; font-size: 13px; }
+.flash-report-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.flash-report-metrics > article { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; min-height: 78px; padding: 12px; border: 1px solid #dce6ed; border-radius: 13px; background: #fff; }
+.flash-report-metrics > article > span { display: grid; grid-row: span 2; width: 33px; height: 33px; place-items: center; border-radius: 10px; background: #edf5f9; color: #397397; }
+.flash-report-metrics small { color: #718292; font-size: 11px; font-weight: 800; }
+.flash-report-metrics strong { color: #173d59; font-size: 17px; white-space: nowrap; }
+.flash-report-metrics > article.highlight { border-color: #f0c5bd; background: #fff8f5; }
+.flash-report-metrics > article.highlight > span { background: #fbe4dd; color: #ce5048; }
+.flash-report-metrics > article.highlight strong { color: #c84d48; }
+.flash-report-metrics.is-loading { opacity: .58; pointer-events: none; }
+.flash-report-shipping-rule { margin: -4px 0 0; padding: 11px 13px; border-radius: 11px; background: #edf7f4; color: #386b60; font-size: 13px; line-height: 1.5; }
+.flash-report-shipping-rule strong { color: #188062; }
+.flash-report-section { overflow: hidden; border: 1px solid #dce6ed; border-radius: 14px; background: #fff; }
+.flash-report-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 17px; border-bottom: 1px solid #e4edf2; background: #fbfdfe; }
+.flash-report-section-head h3 { margin: 4px 0 0; color: #173d59; font-size: 17px; }
+.flash-report-section-head > small { color: #718292; font-size: 12px; font-weight: 800; }
+.flash-report-table-wrap { overflow-x: auto; }
+.flash-report-table-wrap table { width: 100%; min-width: 620px; border-collapse: collapse; color: #435f73; font-size: 13px; }
+.flash-report-table-wrap th, .flash-report-table-wrap td { padding: 12px 16px; border-bottom: 1px solid #e5edf2; text-align: right; white-space: nowrap; }
+.flash-report-table-wrap th { background: #f8fbfd; color: #718292; font-size: 11px; font-weight: 850; }
+.flash-report-table-wrap th:first-child, .flash-report-table-wrap td:first-child { width: 40%; text-align: left; white-space: normal; }
+.flash-report-table-wrap tbody tr:last-child td { border-bottom: 0; }
+.flash-report-table-wrap td strong { display: block; color: #1d405b; font-size: 13px; }
+.flash-report-table-wrap td small { display: block; margin-top: 3px; color: #8192a0; font-size: 11px; }
+.flash-report-table-wrap td b { color: #c84d48; }
+.flash-report-table-wrap .flash-report-empty-row td { padding: 28px 16px; color: #718292; text-align: center; }
+.flash-report-empty { margin: 0; padding: 28px 17px; color: #718292; font-size: 13px; text-align: center; }
 
 .flash-admin-form-panel,
 .flash-admin-list-panel {
@@ -694,7 +733,7 @@
 
 .flash-menu-option {
   display: grid;
-  grid-template-columns: minmax(128px, 1fr) 62px 96px;
+  grid-template-columns: minmax(128px, 1fr) 56px 78px;
   gap: 9px;
   align-items: center;
   min-height: 70px;
@@ -725,7 +764,7 @@
 .flash-menu-toggle input:checked { border-color: #5d7ec3; background: linear-gradient(135deg, #5e9bd7, #6d63bd); box-shadow: 0 4px 9px rgba(85, 112, 185, .22); }
 .flash-menu-toggle input:checked::after { opacity: 1; transform: scale(1); }
 .flash-menu-toggle input:focus-visible { outline: 3px solid rgba(93, 126, 195, .25); outline-offset: 2px; }
-.flash-menu-toggle > span { display: -webkit-box; min-height: 34px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.3; }
+.flash-menu-toggle > span { display: block; min-height: 34px; overflow-wrap: anywhere; line-height: 1.35; }
 .flash-menu-option > label:not(.flash-menu-toggle) { display: grid; grid-template-rows: 14px 34px; gap: 3px; min-width: 0; }
 .flash-menu-option > label:not(.flash-menu-toggle) > span { display: block; overflow: hidden; color: #718292; font-size: 11px; font-weight: 700; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .flash-menu-option input[type="number"],
@@ -906,7 +945,10 @@
 .flash-food-pickup-select { display: grid; gap: 5px; color: #405f74; font-size: 12px; font-weight: 900; }
 .flash-food-pickup-select > span { display: inline-flex; align-items: center; gap: 5px; }
 .flash-food-pickup-select svg { color: #d0524b; }
-.flash-food-pickup-select select { width: 100%; min-height: 42px; padding: 0 34px 0 11px; border: 1px solid #d3dfe7; border-radius: 10px; background: #fff; color: #274761; font: inherit; font-size: 13px; }
+.flash-food-pickup-icon { position: relative; display: inline-grid; width: 30px; height: 30px; place-items: center; flex: 0 0 30px; border-radius: 10px 10px 5px 10px; background: linear-gradient(135deg, #ffd6a1, #e96b64); color: #fffaf4; box-shadow: 0 5px 10px rgba(204, 79, 73, .24); }
+.flash-food-pickup-icon svg { color: currentColor; }
+.flash-food-pickup-icon svg:last-child { position: absolute; right: 2px; bottom: 2px; padding: 1px; border-radius: 3px; background: #fffaf4; color: #c94f4b; }
+.flash-food-pickup-select select { width: 100%; min-height: 48px; padding: 0 42px 0 13px; border: 1px solid #d3dfe7; border-radius: 11px; background: #fff; color: #274761; font: inherit; font-size: 15px; font-weight: 800; }
 .flash-food-submit textarea { min-height: 45px; padding: 10px; border: 1px solid #d3dfe7; border-radius: 10px; resize: vertical; color: #274761; font: inherit; font-size: 13px; }
 .flash-food-submit button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border: 0; border-radius: 10px; background: #d6504b; color: #fff; font-weight: 900; cursor: pointer; }
 .flash-food-submit button:hover { background: #bd403e; }
@@ -921,10 +963,21 @@
 .flash-food-menu-board-head p { max-width: 280px; margin: 0; color: #6c8191; font-size: 12px; line-height: 1.55; text-align: right; }
 .flash-food-global-menu-grid { padding: 16px 20px 20px; }
 .flash-food-global-menu-grid .flash-food-product-card { min-height: 206px; }
-.flash-food-mobile-menu-groups, .flash-mobile-order-bar { display: none; }
-.flash-food-campaign-rail { position: sticky; top: 20px; grid-column: 2; grid-row: 1; padding: 16px; border: 1px solid #dce5ec; border-radius: 18px; background: linear-gradient(155deg, #fff, #f7f3fb); box-shadow: 0 12px 28px rgba(34, 63, 84, .07); }
+.flash-food-mobile-menu-groups { display: none; }
+.flash-food-campaign-rail { grid-column: 2; grid-row: 1; padding: 16px; border: 1px solid #dce5ec; border-radius: 18px; background: linear-gradient(155deg, #fff, #f7f3fb); box-shadow: 0 12px 28px rgba(34, 63, 84, .07); }
 .flash-food-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 13px; border-bottom: 1px solid #e2e9ef; }
 .flash-food-rail-head h2 { font-size: 18px; }
+.flash-food-rail-status { display: grid; gap: 9px; margin-top: 12px; }
+.flash-food-rail-status-card { display: grid; gap: 5px; width: 100%; padding: 12px; border: 1px solid #dce5ec; border-radius: 12px; background: #fff; color: #294960; text-align: left; }
+.flash-food-rail-status-card.open { cursor: pointer; background: linear-gradient(135deg, #fff8ef, #fff); border-color: #efac76; }
+.flash-food-rail-status-card.open:hover, .flash-food-rail-status-card.open.selected { border-color: #dc675b; box-shadow: 0 6px 15px rgba(194, 88, 78, .13); }
+.flash-food-rail-status-card.scheduled { background: linear-gradient(135deg, #f4f0ff, #fff); border-color: #d8ceea; }
+.flash-food-rail-status-card > span { color: #c35447; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.flash-food-rail-status-card.scheduled > span { color: #745a9b; }
+.flash-food-rail-status-card strong { color: #183d57; font-size: 15px; }
+.flash-food-rail-status-card small { display: flex; align-items: flex-start; gap: 5px; color: #6f8391; font-size: 11px; line-height: 1.35; }
+.flash-food-rail-status-card small svg { flex: 0 0 auto; margin-top: 1px; color: #d26055; }
+.flash-food-rail-awaiting { margin-top: 12px; }
 .flash-food-rail-list { display: grid; gap: 9px; margin-top: 12px; }
 .flash-food-rail-empty { display: grid; gap: 5px; padding: 16px 13px; border: 1px dashed #cfdce7; border-radius: 13px; background: #f8fbfd; color: #6d8190; text-align: center; }
 .flash-food-rail-empty strong { color: #254a64; font-size: 14px; }
@@ -964,9 +1017,16 @@
 .flash-food-order-selection h2 { font-size: 21px; }
 .flash-food-order-selection .flash-food-pickup-select { margin-top: 13px; }
 .flash-food-order-selection ul { display: grid; gap: 7px; margin: 13px 0 0; padding: 0; list-style: none; }
-.flash-food-order-selection li { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 7px; border-bottom: 1px dashed #d8e3ea; color: #476477; font-size: 13px; }
+.flash-food-order-selection li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 7px; border-bottom: 1px dashed #d8e3ea; color: #476477; font-size: 13px; }
+.flash-food-order-selection li > span { min-width: 0; line-height: 1.4; }
 .flash-food-order-selection li b { color: #c2534c; }
-.flash-food-order-selection li strong { color: #1c5d86; white-space: nowrap; }
+.flash-food-order-item-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.flash-food-order-item-actions .flash-quantity-control { border-radius: 8px; }
+.flash-food-order-item-actions .flash-quantity-control button { width: 27px; height: 27px; }
+.flash-food-order-item-actions .flash-quantity-control span { width: 27px; font-size: 12px; }
+.flash-food-order-remove { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #f0c6c4; border-radius: 8px; background: #fff5f4; color: #cf504c; cursor: pointer; }
+.flash-food-order-remove:hover { background: #fee9e7; }
+.flash-food-order-selection li strong { color: #1c5d86; font-size: 14px; white-space: nowrap; }
 .flash-food-order-empty { margin: 14px 0 0; color: #8496a2; font-size: 13px; }
 .flash-food-order-total { align-self: start; padding: 12px 0; }
 .flash-food-order-total > span { color: #687f90; font-size: 12px; font-weight: 800; }
@@ -979,7 +1039,7 @@
 @media (max-width: 980px) {
   .flash-admin-layout { grid-template-columns: 1fr; }
   .flash-menu-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .flash-menu-option { grid-template-columns: minmax(0, 1fr) 72px; border-right: 1px solid #e0e7ef; }
+  .flash-menu-option { grid-template-columns: minmax(0, 1fr) 56px; border-right: 1px solid #e0e7ef; }
   .flash-menu-option:nth-child(2n) { border-right: 0; }
   .flash-menu-option > label:last-child { grid-column: 1 / -1; }
   .flash-food-workspace { grid-template-columns: 1fr; }
@@ -1001,6 +1061,23 @@
   .flash-admin-tabs button { flex-basis: 116px; min-height: 54px; padding-inline: 11px; font-size: 13px; }
   .flash-admin-layout { padding: 14px 12px 18px; }
   .flash-admin-form-panel, .flash-admin-list-panel { padding: 18px; border-radius: 17px; }
+  .flash-operating-report { gap: 14px; padding: 18px; border-radius: 17px; }
+  .flash-operating-report-head { align-items: stretch; flex-direction: column; gap: 12px; }
+  .flash-operating-report-head h2 { font-size: 21px; }
+  .flash-operating-report-head p { font-size: 12px; }
+  .flash-report-refresh { justify-content: center; min-height: 42px; }
+  .flash-report-periods { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .flash-report-periods.flash-report-periods-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .flash-report-periods button { min-width: 0; min-height: 39px; padding: 6px 4px; font-size: 12px; }
+  .flash-report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .flash-report-metrics > article { min-height: 70px; padding: 10px; }
+  .flash-report-metrics > article > span { width: 30px; height: 30px; }
+  .flash-report-metrics strong { font-size: 15px; }
+  .flash-report-shipping-rule { padding: 10px 11px; font-size: 12px; }
+  .flash-report-section-head { padding: 13px 14px; }
+  .flash-report-section-head h3 { font-size: 16px; }
+  .flash-report-table-wrap table { min-width: 570px; font-size: 12px; }
+  .flash-report-table-wrap th, .flash-report-table-wrap td { padding: 10px 12px; }
   .flash-form-grid { grid-template-columns: 1fr; }
   .flash-schedule-editor { grid-template-columns: 1fr; }
   .flash-campaign-edit-form { grid-template-columns: 1fr; }
@@ -1009,8 +1086,11 @@
   .flash-field-wide { grid-column: auto; }
   .flash-menu-editor-head, .flash-menu-option { align-items: start; }
   .flash-menu-editor-head { flex-direction: column; gap: 5px; }
-  .flash-menu-option { grid-template-columns: minmax(0, 1fr) 68px; }
+  .flash-menu-option { grid-template-columns: minmax(0, 1fr) 52px; gap: 7px; padding: 10px; }
   .flash-menu-option > label:last-child { grid-column: 1 / -1; }
+  .flash-menu-option > label:not(.flash-menu-toggle) { grid-template-rows: 13px 31px; gap: 2px; }
+  .flash-menu-option > label:not(.flash-menu-toggle) > span { font-size: 10px; line-height: 13px; }
+  .flash-menu-option input[type="number"], .flash-menu-option input[type="text"], .flash-menu-option > label:not(.flash-menu-toggle) input { min-height: 31px; height: 31px; padding: 4px 5px; font-size: 12px; }
   .flash-food-hero, .flash-food-content { width: min(100% - 24px, 640px); }
   .flash-food-hero { align-items: flex-start; padding: 26px 24px; border-radius: 20px; }
   .flash-food-hero > svg { width: 36px; height: 36px; }
@@ -1035,15 +1115,23 @@
   .flash-food-mobile-menu-grid::-webkit-scrollbar-track { border-radius: 99px; background: #e5eef3; }
   .flash-food-mobile-menu-grid::-webkit-scrollbar-thumb { border-radius: 99px; background: #91aec0; }
   .flash-food-mobile-menu-grid .flash-food-product-card { flex: 0 0 min(78vw, 276px); min-height: 222px; scroll-snap-align: start; }
-  .flash-mobile-order-bar { position: fixed; right: 12px; bottom: 12px; left: 12px; z-index: 25; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; min-height: 52px; padding: 10px 14px; border: 1px solid rgba(255,255,255,.72); border-radius: 15px; background: linear-gradient(110deg, #d95850, #9d628f); box-shadow: 0 12px 28px rgba(110, 57, 84, .28); color: #fff; font: inherit; text-align: left; }
-  .flash-mobile-order-bar span { font-size: 13px; font-weight: 800; }
-  .flash-mobile-order-bar strong { font-size: 16px; }
-  #flash-food-order-board { scroll-margin-top: 18px; scroll-margin-bottom: 84px; }
+  #flash-food-order-board { scroll-margin-top: 18px; }
   .flash-food-main-column { order: 2; }
   .flash-food-campaign-rail { order: 1; padding: 14px; }
   .flash-food-rail-order { order: 3; }
   .flash-food-rail-list { grid-template-columns: 1fr; }
   .flash-food-order-board { grid-template-columns: 1fr; gap: 9px; padding: 17px; }
+  .flash-food-order-selection li { align-items: flex-start; gap: 8px; }
+  .flash-food-order-selection li > span { color: #244b67; font-size: 16px; font-weight: 850; }
+  .flash-food-order-selection li b { font-size: 15px; }
+  .flash-food-order-item-actions { gap: 5px; padding-top: 1px; }
+  .flash-food-order-item-actions .flash-quantity-control button { width: 25px; height: 28px; }
+  .flash-food-order-item-actions .flash-quantity-control span { width: 24px; }
+  .flash-food-order-remove { width: 28px; height: 28px; }
+  .flash-food-order-selection li strong { font-size: 13px; }
+  .flash-food-order-selection .flash-food-pickup-select.flash-food-mobile-cart-location { display: grid; grid-template-columns: 98px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 13px; padding: 7px 9px; border: 1px solid #f0c2bd; border-radius: 14px 14px 7px 14px; background: linear-gradient(135deg, #fff0eb 0%, #fff9f5 100%); box-shadow: 0 9px 20px rgba(197, 75, 70, .09); }
+  .flash-food-order-selection .flash-food-pickup-select.flash-food-mobile-cart-location > .flash-food-pickup-label { gap: 7px; color: #934844; font-size: 13px; white-space: nowrap; }
+  .flash-food-order-selection .flash-food-pickup-select.flash-food-mobile-cart-location select { min-height: 42px; padding: 0 38px 0 11px; border-color: #f0d2cf; border-radius: 9px 5px 9px 9px; box-shadow: 0 2px 7px rgba(176, 70, 65, .07); font-size: 15px; }
   .flash-food-order-board .flash-food-submit { grid-column: auto; grid-template-columns: 1fr; }
   .flash-food-order-board .flash-food-submit .flash-food-edit-note, .flash-food-order-board .flash-food-submit textarea, .flash-food-order-board .flash-food-submit button { grid-column: auto; }
   .flash-food-menu-preview-head { align-items: start; flex-direction: column; gap: 6px; padding: 19px 19px 14px; }

@@ -60,6 +60,11 @@ export async function loadAdminFlashFoodCampaigns() {
   return { data: (data || []).map(sortCampaignItems), error };
 }
 
+export async function loadAdminFlashFoodOperatingReport(period = "month") {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_flash_food_operating_report", { p_period: period });
+}
+
 export async function createFlashFoodCampaign(payload) {
   if (!adminSupabase) return missingClient();
   const result = await adminSupabase.rpc("admin_create_flash_food_campaign", {
@@ -74,10 +79,7 @@ export async function createFlashFoodCampaign(payload) {
     p_items: payload.items,
   });
   if (result.error || !result.data) return result;
-  const notification = await adminSupabase.functions.invoke("flash-food-notify", {
-    body: { campaign_id: result.data, event_type: "campaign_opened" },
-  });
-  return { ...result, notificationError: notification.error || (Number(notification.data?.failed || 0) > 0 ? new Error("LINE 通知部分發送失敗") : null) };
+  return result;
 }
 
 export async function updateFlashFoodCampaign(payload) {
