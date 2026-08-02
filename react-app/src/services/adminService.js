@@ -192,6 +192,20 @@ export async function checkAdminAccess() {
   return { data: Boolean(data), error };
 }
 
+export async function loadAdminLineTransferMembers() {
+  if (!adminSupabase) return missingClient({ data: [] });
+  const { data, error } = await adminSupabase.rpc("admin_list_members_for_line_transfer");
+  return { data: Array.isArray(data) ? data : [], error };
+}
+
+export async function transferAdminMemberToLine(legacyUserId, lineUserId) {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.rpc("admin_transfer_member_to_line", {
+    p_legacy_user_id: legacyUserId,
+    p_line_user_id: lineUserId,
+  });
+}
+
 export async function bulkUpdateOrders(ids, status, reason = "批次更新") {
   const updated = [];
   for (const id of ids) {

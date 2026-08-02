@@ -1,26 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { AtSign, BadgeCheck, BellRing, KeyRound, Link2, Mail, Pencil, Phone, Save, ShieldCheck, UserRound, X } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { BadgeCheck, BellRing, Pencil, Phone, Save, ShieldCheck, UserRound, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import MemberLayout from "../components/MemberLayout";
 import { useAuth } from "../context/AuthContext";
 import { hasCompletedMemberProfile, loadMemberProfile, updateMemberProfile } from "../services/profileService";
-import { issueLineLinkCode, loadLineBinding, updateLineNotifications } from "../services/lineService";
-import { looksLikeEmail, normalizeAccount, normalizePhone } from "../utils/auth";
+import { ensureLineMemberBinding, loadLineBinding, updateLineNotifications } from "../services/lineService";
+import { normalizePhone } from "../utils/auth";
 
 function validateProfile(profile) {
-  if (!profile.full_name || !profile.account || !profile.real_phone || !profile.email) {
-    return "請完整填寫所有欄位。";
-  }
-  if (!/^[a-z0-9]{6,30}$/.test(profile.account)) {
-    return "會員帳號需為 6-30 位英文小寫或數字。";
-  }
-  if (profile.real_phone.length < 8 || profile.real_phone.length > 20) {
-    return "請輸入有效手機號碼。";
-  }
-  if (!looksLikeEmail(profile.email)) {
-    return "請輸入有效郵箱。";
-  }
+  if (!profile.full_name || !profile.real_phone) return "請填寫姓名與手機。";
+  if (profile.real_phone.length < 8 || profile.real_phone.length > 20) return "請輸入正確的手機號碼。";
   return "";
 }
 
@@ -31,159 +21,102 @@ export default function ProfilePage() {
   const [profileSnapshot, setProfileSnapshot] = useState(null);
   const [profilePersisted, setProfilePersisted] = useState(false);
   const logoutTimerRef = useRef(null);
-  const [form, setForm] = useState({
-    full_name: "",
-    account: "",
-    real_phone: "",
-    email: "",
-  });
+  const [form, setForm] = useState({ full_name: "", account: "", real_phone: "" });
   const [message, setMessage] = useState({ text: "", type: "" });
   const [lineBinding, setLineBinding] = useState(null);
-  const [lineLinkCode, setLineLinkCode] = useState(null);
   const [lineMessage, setLineMessage] = useState({ text: "", type: "" });
   const [lineBusy, setLineBusy] = useState(false);
-  const profileReady = Boolean(profilePersisted && profileSnapshot && profileSnapshot.full_name && profileSnapshot.account);
-  const profileInitial = (form.full_name || form.account || "?").trim().slice(0, 1).toUpperCase();
-  const passwordLoginEnabled = Boolean(
-    user?.app_metadata?.provider === "email" || user?.app_metadata?.providers?.includes("email")
-  );
+  const profileReady = Boolean(profilePersisted && profileSnapshot?.full_name && profileSnapshot?.real_phone);
+  const profileInitial = (form.full_name || "會").trim().slice(0, 1).toUpperCase();
 
   useEffect(() => {
     let active = true;
 
     async function run() {
+      const bindResult = await ensureLineMemberBinding();
+      if (!active) return;
+      if (bindResult.error) {
+        setLineMessage({ text: "尚未完成 LINE 綁定，請重新使用 LINE 登入。", type: "error" });
+      }
+
       const result = await loadMemberProfile(user);
-      if (!active) {
-        return;
-      }
-
+      if (!active) return;
       if (result.errorType === "SESSION_EXPIRED") {
-        setMessage({ text: "登入已過期，系統將自動登出並返回登入頁。", type: "error" });
+        setMessage({ text: "登入狀態已失效，將返回訂購頁。", type: "error" });
         setEditing(false);
-        if (!logoutTimerRef.current) {
-          logoutTimerRef.current = window.setTimeout(() => {
-            signOut();
-          }, 3000);
-        }
+        if (!logoutTimerRef.current) logoutTimerRef.current = window.setTimeout(() => signOut(), 3000);
         return;
       }
-
-      if (result.error) {
-        setMessage({ text: `會員資料載入失敗：${result.error.message}`, type: "error" });
-        setEditing(false);
+      if (result.error || !result.data) {
+        setMessage({ text: `讀取會員資料失敗：${result.error?.message || "請稍後再試"}`, type: "error" });
         return;
       }
 
       const profile = result.data;
-      if (!profile) {
-        setMessage({ text: "會員資料載入失敗。", type: "error" });
-        setEditing(false);
-        return;
-      }
-
       const nextForm = {
         full_name: profile.full_name || "",
         account: profile.account || "",
         real_phone: profile.real_phone || "",
-        email: profile.email || user?.email || "",
       };
       setProfileSnapshot(nextForm);
       setForm(nextForm);
-      const isProfileComplete = hasCompletedMemberProfile(profile);
-      setProfilePersisted(isProfileComplete);
-      setEditing(!isProfileComplete);
-      setMessage(
-        isProfileComplete
-          ? { text: "", type: "" }
-          : { text: "請確認會員資料後按一次儲存，以完成會員資料建立。", type: "error" }
-      );
+      const complete = hasCompletedMemberProfile(profile);
+      setProfilePersisted(complete);
+      setEditing(!complete);
+      setMessage(complete ? { text: "", type: "" } : { text: "請完成姓名與手機後開始訂購。", type: "error" });
 
       const { data: binding, error: bindingError } = await loadLineBinding(user.id);
-      if (!active) {
-        return;
-      }
-      if (bindingError) {
-        setLineMessage({ text: "LINE 綁定狀態讀取失敗，請重新整理後再試。", type: "error" });
-      } else {
-        setLineBinding(binding);
-      }
+      if (!active) return;
+      if (bindingError) setLineMessage({ text: "讀取 LINE 通知設定失敗。", type: "error" });
+      else setLineBinding(binding);
     }
 
     run();
     return () => {
       active = false;
-      if (logoutTimerRef.current) {
-        clearTimeout(logoutTimerRef.current);
-        logoutTimerRef.current = null;
-      }
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
     };
   }, [signOut, user]);
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!editing) {
-      return;
-    }
-
+    if (!editing) return;
     const isFirstProfileSetup = !profilePersisted;
     const nextProfile = {
       full_name: form.full_name.trim(),
-      account: normalizeAccount(form.account),
       real_phone: normalizePhone(form.real_phone),
-      email: form.email.trim().toLowerCase(),
     };
-
     const invalidReason = validateProfile(nextProfile);
     if (invalidReason) {
       setMessage({ text: invalidReason, type: "error" });
       return;
     }
 
-    setMessage({ text: "儲存中...", type: "" });
+    setMessage({ text: "正在儲存…", type: "" });
     const result = await updateMemberProfile(user, nextProfile);
     if (result.error) {
-      setMessage({ text: `更新失敗：${result.error.message}`, type: "error" });
+      setMessage({ text: `儲存失敗：${result.error.message}`, type: "error" });
       return;
     }
 
-    setProfileSnapshot(nextProfile);
-    setForm(nextProfile);
+    const saved = result.data || { ...form, ...nextProfile };
+    const savedForm = {
+      full_name: saved.full_name || nextProfile.full_name,
+      account: saved.account || form.account,
+      real_phone: saved.real_phone || nextProfile.real_phone,
+    };
+    setProfileSnapshot(savedForm);
+    setForm(savedForm);
     setProfilePersisted(true);
     setEditing(false);
-    setMessage({
-      text: result.emailChanged
-        ? "資料已更新，請到新郵箱收驗證信完成變更。"
-        : "會員資料已更新。",
-      type: "success",
-    });
-
-    if (isFirstProfileSetup) {
-      setMessage({ text: "會員資料已完成，正在前往填單頁...", type: "success" });
-      window.setTimeout(() => {
-        navigate("/order", { replace: true });
-      }, 900);
-    }
+    setMessage({ text: "會員資料已儲存。", type: "success" });
+    if (isFirstProfileSetup) window.setTimeout(() => navigate("/order", { replace: true }), 700);
   }
 
   function cancelEdit() {
-    if (profileSnapshot) {
-      setForm(profileSnapshot);
-    }
+    if (profileSnapshot) setForm(profileSnapshot);
     setEditing(false);
     setMessage({ text: "", type: "" });
-  }
-
-  async function handleIssueLineCode() {
-    setLineBusy(true);
-    setLineMessage({ text: "", type: "" });
-    const { data, error } = await issueLineLinkCode();
-    setLineBusy(false);
-    if (error || !data?.code) {
-      setLineMessage({ text: "無法產生 LINE 綁定碼，請稍後再試。", type: "error" });
-      return;
-    }
-    setLineLinkCode(data);
-    setLineMessage({ text: "請將下方指令傳送到你的 LINE 官方帳號。", type: "success" });
   }
 
   async function handleNotificationChange(event) {
@@ -192,21 +125,17 @@ export default function ProfilePage() {
     const { data, error } = await updateLineNotifications(enabled);
     setLineBusy(false);
     if (error || !data) {
-      setLineMessage({ text: "LINE 通知設定更新失敗，請稍後再試。", type: "error" });
+      setLineMessage({ text: "LINE 通知設定儲存失敗，請稍後再試。", type: "error" });
       return;
     }
     setLineBinding(data);
-    setLineMessage({ text: enabled ? "已開啟 LINE 訂單通知。" : "已暫停 LINE 訂單通知。", type: "success" });
+    setLineMessage({ text: enabled ? "已開啟 LINE 訂單通知。" : "已關閉 LINE 訂單通知。", type: "success" });
   }
 
   return (
     <MemberLayout
       title={profilePersisted ? "會員資料" : "完成會員資料"}
-      subtitle={
-        profilePersisted
-          ? "管理聯絡資料與帳戶安全設定。"
-          : "首次登入請填寫聯絡資料，完成後會自動回到填單頁。"
-      }
+      subtitle={profilePersisted ? "使用 LINE 登入並管理訂單通知。" : "只要填寫姓名與手機，即可開始下單。"}
       active="profile"
       pageClassName="member-profile-page"
     >
@@ -215,25 +144,19 @@ export default function ProfilePage() {
           <div className="profile-identity">
             <div className="profile-avatar" aria-hidden="true">{profileInitial}</div>
             <div>
-              <p className="section-eyebrow">MEMBER PROFILE</p>
+              <p className="section-eyebrow">LINE MEMBER</p>
               <div className="profile-title-row">
-                <h2>{form.full_name || "會員資料"}</h2>
-                {profileReady ? <span className="profile-verified"><BadgeCheck size={15} />資料已完成</span> : null}
+                <h2>{form.full_name || "LINE 會員"}</h2>
+                {profileReady ? <span className="profile-verified"><BadgeCheck size={15} />已完成</span> : null}
               </div>
-              <p className="profile-account">@{form.account || "尚未設定帳號"}</p>
+              <p className="profile-account">LINE 登入會員</p>
             </div>
           </div>
           <div className="profile-summary-actions">
             {editing ? (
-              <button type="button" className="ghost profile-action-button" onClick={cancelEdit}>
-                <X size={17} />
-                取消
-              </button>
+              <button type="button" className="ghost profile-action-button" onClick={cancelEdit}><X size={17} />取消</button>
             ) : (
-              <button type="button" className="primary profile-action-button" onClick={() => setEditing(true)}>
-                <Pencil size={17} />
-                編輯資料
-              </button>
+              <button type="button" className="primary profile-action-button" onClick={() => setEditing(true)}><Pencil size={17} />編輯資料</button>
             )}
           </div>
         </header>
@@ -244,126 +167,43 @@ export default function ProfilePage() {
               <div className="profile-section-icon"><UserRound size={20} /></div>
               <div>
                 <p className="section-eyebrow">PERSONAL DETAILS</p>
-                <h3 id="profileDetailsTitle">
-                  {profilePersisted ? "基本資料" : "完成資料後開始填單"}
-                </h3>
-                <p>
-                  {profilePersisted
-                    ? "此資料會用於訂單聯絡與交貨確認。"
-                    : "LINE 不會提供完整的聯絡資料；請填寫後即可進入訂購系統。"}
-                </p>
+                <h3 id="profileDetailsTitle">基本資料</h3>
+                <p>姓名與手機僅用於建立訂單與聯絡取貨。</p>
               </div>
             </div>
-
             <div className="profile-field-grid">
               <label className="profile-field">
                 <span><UserRound size={16} />姓名</span>
-                <input
-                  className="profile-input"
-                  type="text"
-                  required
-                  readOnly={!editing}
-                  value={form.full_name}
-                  onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
-                />
+                <input className="profile-input" type="text" required readOnly={!editing} value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
               </label>
               <label className="profile-field">
-                <span><AtSign size={16} />會員帳號</span>
-                <input
-                  className="profile-input"
-                  type="text"
-                  required
-                  readOnly={!editing}
-                  value={form.account}
-                  onChange={(event) => setForm((current) => ({ ...current, account: event.target.value }))}
-                />
-              </label>
-              <label className="profile-field">
-                <span><Phone size={16} />手機號碼</span>
-                <input
-                  className="profile-input"
-                  type="tel"
-                  required
-                  readOnly={!editing}
-                  value={form.real_phone}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, real_phone: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="profile-field profile-field-wide">
-                <span><Mail size={16} />Email</span>
-                <input
-                  className="profile-input"
-                  type="email"
-                  required
-                  readOnly={!editing}
-                  value={form.email}
-                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                />
+                <span><Phone size={16} />手機</span>
+                <input className="profile-input" type="tel" required readOnly={!editing} value={form.real_phone} onChange={(event) => setForm((current) => ({ ...current, real_phone: event.target.value }))} />
               </label>
             </div>
-
             <div className={`profile-save-row${editing ? "" : " hidden"}`}>
-              <button type="submit" className="primary profile-action-button">
-                <Save size={17} />
-                {profilePersisted ? "儲存變更" : "儲存並前往填單"}
-              </button>
-              <span>變更 Email 後，需至新信箱完成驗證。</span>
+              <button type="submit" className="primary profile-action-button"><Save size={17} />{profilePersisted ? "儲存變更" : "完成會員資料"}</button>
             </div>
             <FormMessage text={message.text} type={message.type} />
           </section>
 
           <aside className="profile-security-section" aria-labelledby="profileSecurityTitle">
             <div className="profile-section-icon security"><ShieldCheck size={20} /></div>
-            <p className="section-eyebrow">ACCOUNT SECURITY</p>
-            <h3 id="profileSecurityTitle">帳戶安全</h3>
-            <p>定期更新密碼，確保你的訂單與會員資料安全。</p>
-            {passwordLoginEnabled ? (
-              <Link className="ghost profile-security-link" to="/change-password">
-                <KeyRound size={18} />
-                修改登入密碼
-              </Link>
-            ) : (
-              <p className="profile-security-provider">此帳戶使用 LINE 登入。</p>
-            )}
-
+            <p className="section-eyebrow">LINE ACCOUNT</p>
+            <h3 id="profileSecurityTitle">LINE 登入</h3>
+            <p>此帳號使用 LINE 驗證，不需要 Email、密碼或綁定碼。</p>
             <div className="profile-line-section">
               <div className="profile-section-icon line"><BellRing size={20} /></div>
-              <p className="section-eyebrow">LINE NOTIFICATIONS</p>
+              <p className="section-eyebrow">ORDER NOTIFICATIONS</p>
               <h3>LINE 訂單通知</h3>
               {lineBinding ? (
-                <>
-                  <p>{lineBinding.blocked_at ? "LINE 官方帳號目前無法接收訊息，請重新加好友後再綁定。" : "已綁定 LINE，可接收訂金、採買與取貨狀態通知。"}</p>
-                  {!lineBinding.blocked_at ? (
-                    <label className="profile-line-toggle">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(lineBinding.notifications_enabled)}
-                        disabled={lineBusy}
-                        onChange={handleNotificationChange}
-                      />
-                      <span>接收訂單狀態通知</span>
-                    </label>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <p>綁定後，訂單狀態更新會直接傳送到你的 LINE。</p>
-                  <button type="button" className="ghost profile-line-code-button" disabled={lineBusy} onClick={handleIssueLineCode}>
-                    <Link2 size={17} />
-                    {lineBusy ? "產生中..." : "取得綁定碼"}
-                  </button>
-                </>
-              )}
-
-              {lineLinkCode && !lineBinding ? (
-                <div className="profile-line-code" aria-live="polite">
-                  <span>傳送給官方帳號</span>
-                  <strong>綁定 {lineLinkCode.code}</strong>
-                  <small>此綁定碼將於 15 分鐘後失效。</small>
-                </div>
-              ) : null}
+                lineBinding.blocked_at ? <p>目前無法傳送通知；請重新加入官方帳號後，再使用 LINE 登入一次。</p> : (
+                  <label className="profile-line-toggle">
+                    <input type="checkbox" checked={Boolean(lineBinding.notifications_enabled)} disabled={lineBusy} onChange={handleNotificationChange} />
+                    <span>接收個人訂單與快閃熱食通知</span>
+                  </label>
+                )
+              ) : <p>LINE 綁定處理中，完成後即可接收個人訂單通知。</p>}
               <FormMessage text={lineMessage.text} type={lineMessage.type} />
             </div>
           </aside>

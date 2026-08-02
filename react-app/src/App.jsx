@@ -7,17 +7,16 @@ import AdminProductsPage from "./pages/AdminProductsPage";
 import AdminReportsPage from "./pages/AdminReportsPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminFlashFoodPage from "./pages/AdminFlashFoodPage";
-import ChangePasswordPage from "./pages/ChangePasswordPage";
 import FavoritesPage from "./pages/FavoritesPage";
 import FlashFoodPage from "./pages/FlashFoodPage";
 import HistoryPage from "./pages/HistoryPage";
 import LineAuthCallbackPage from "./pages/LineAuthCallbackPage";
+import LineMemberPage from "./pages/LineMemberPage";
 import OrderPage from "./pages/OrderPage";
 import PaymentPage from "./pages/PaymentPage";
 import PendingOrderPage from "./pages/PendingOrderPage";
 import PopularProductsPage from "./pages/PopularProductsPage";
 import ProfilePage from "./pages/ProfilePage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
 import RulesPage from "./pages/RulesPage";
 
 const pageTitles = {
@@ -30,8 +29,6 @@ const pageTitles = {
   "/profile": "會員資料",
   "/payment": "付款資訊",
   "/pending-order": "進行中訂單",
-  "/reset-password": "重設密碼",
-  "/change-password": "更新密碼",
   "/auth/callback": "LINE 登入",
   "/admin": "後台訂單管理",
   "/admin/products": "熱門商品管理",
@@ -56,9 +53,9 @@ export default function App() {
       <RouteTitle />
       <Routes>
       <Route path="/" element={<Navigate to="/order" replace />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/order" element={<OrderPage />} />
       <Route path="/auth/callback" element={<LineAuthCallbackPage />} />
+      <Route path="/line-member" element={<LineMemberPage />} />
       <Route path="/popular" element={<PopularProductsPage />} />
       <Route path="/rules" element={<RulesPage />} />
       <Route
@@ -90,14 +87,6 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ProfilePage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/change-password"
-        element={
-          <ProtectedRoute>
-            <ChangePasswordPage />
           </ProtectedRoute>
         }
       />

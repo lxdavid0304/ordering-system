@@ -17,9 +17,7 @@ function toBase64(bytes: ArrayBuffer) {
 function sameText(left: string, right: string) {
   if (left.length !== right.length) return false;
   let mismatch = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
+  for (let index = 0; index < left.length; index += 1) mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
   return mismatch === 0;
 }
 
@@ -42,14 +40,7 @@ async function replyMessage(token: string, replyToken: string, message: string) 
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ replyToken, messages: [{ type: "text", text: message }] }),
   });
-  if (!response.ok) {
-    console.error("LINE reply failed", response.status, await response.text());
-  }
-}
-
-function getLinkCode(text: string) {
-  const match = text.trim().toUpperCase().match(/^綁定\s*([A-F0-9]{12})$/);
-  return match?.[1] || "";
+  if (!response.ok) console.error("LINE reply failed", response.status, await response.text());
 }
 
 serve(async (request) => {
@@ -59,6 +50,7 @@ serve(async (request) => {
   const accessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const memberUrl = `${(Deno.env.get("PUBLIC_APP_URL") || "https://stalwart-axolotl-945b6e.netlify.app").replace(/\/$/, "")}/line-member`;
   const rawBody = await request.text();
   const signature = request.headers.get("x-line-signature") || "";
 
@@ -66,9 +58,7 @@ serve(async (request) => {
     console.error("LINE webhook is missing required secrets");
     return textResponse("Server not configured", 500);
   }
-  if (!signature || !(await isValidSignature(rawBody, signature, secret))) {
-    return textResponse("Invalid signature", 401);
-  }
+  if (!signature || !(await isValidSignature(rawBody, signature, secret))) return textResponse("Invalid signature", 401);
 
   let payload: { events?: Array<Record<string, unknown>> };
   try {
@@ -78,48 +68,28 @@ serve(async (request) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const memberPrompt = `歡迎加入！請點選下方圖文選單的「綁定會員」，使用 LINE 登入後填寫姓名與手機，即可接收個人訂單與快閃熱食通知。\n${memberUrl}`;
+
   for (const event of payload.events || []) {
     const eventType = String(event.type || "");
     const source = (event.source || {}) as Record<string, unknown>;
     const lineUserId = String(source.userId || "");
     const replyToken = String(event.replyToken || "");
-
     if (!/^U[0-9a-f]{32}$/.test(lineUserId)) continue;
 
     if (eventType === "unfollow") {
       await supabase.rpc("mark_line_account_unfollowed", { p_line_user_id: lineUserId });
       continue;
     }
-
     if (eventType === "follow") {
-      await replyMessage(accessToken, replyToken, "歡迎加入。請先登入代購網站，在會員資料取得 12 位綁定碼後，傳送「綁定 綁定碼」即可接收訂單通知。");
+      await replyMessage(accessToken, replyToken, memberPrompt);
       continue;
     }
-
     if (eventType !== "message") continue;
     const message = (event.message || {}) as Record<string, unknown>;
     if (message.type !== "text") continue;
-    const linkCode = getLinkCode(String(message.text || ""));
-
-    if (!linkCode) {
-      await replyMessage(accessToken, replyToken, "請到代購網站的會員資料取得綁定碼，再傳送「綁定 綁定碼」。");
-      continue;
-    }
-
-    const { data, error } = await supabase.rpc("consume_line_link_code", {
-      p_code: linkCode,
-      p_line_user_id: lineUserId,
-    });
-    if (error) {
-      console.error("Failed to consume LINE link code", error);
-      await replyMessage(accessToken, replyToken, "系統暫時無法完成綁定，請稍後再試。");
-    } else if (data === "LINKED") {
-      await replyMessage(accessToken, replyToken, "LINE 通知已綁定成功。訂單狀態變更時會在這裡通知你。");
-    } else if (data === "ALREADY_LINKED") {
-      await replyMessage(accessToken, replyToken, "此 LINE 帳號已綁定其他會員。若需協助，請聯絡管理員。");
-    } else {
-      await replyMessage(accessToken, replyToken, "綁定碼無效或已過期，請回網站取得新的綁定碼。");
-    }
+    const text = String(message.text || "").trim();
+    if (/^(綁定會員|會員登入|登入會員)$/u.test(text)) await replyMessage(accessToken, replyToken, memberPrompt);
   }
 
   return textResponse("ok");

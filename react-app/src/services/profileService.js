@@ -3,12 +3,7 @@ import { memberSupabase } from "../lib/supabase";
 function buildFallbackProfile(user) {
   return {
     user_id: user.id,
-    full_name: String(
-      user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.user_metadata?.preferred_username ||
-        ""
-    ),
+    full_name: String(user.user_metadata?.full_name || user.user_metadata?.name || ""),
     account: String(user.user_metadata?.account || ""),
     email: String(user.user_metadata?.contact_email || user.email || ""),
     real_phone: String(user.user_metadata?.real_phone || ""),
@@ -20,30 +15,23 @@ export function hasCompletedMemberProfile(profile) {
   return Boolean(
     profile?.persisted &&
       String(profile.full_name || "").trim() &&
-      String(profile.account || "").trim() &&
-      String(profile.email || "").trim() &&
       String(profile.real_phone || "").trim()
   );
 }
 
 export async function loadMemberProfile(user) {
   if (!memberSupabase || !user?.id) {
-    return {
-      data: null,
-      error: new Error("登入狀態失效"),
-      errorType: "SESSION_EXPIRED",
-    };
+    return { data: null, error: new Error("登入狀態已失效"), errorType: "SESSION_EXPIRED" };
   }
 
   const {
     data: { session },
     error: sessionError,
   } = await memberSupabase.auth.getSession();
-
   if (sessionError || !session) {
     return {
       data: null,
-      error: sessionError || new Error("登入已過期，請重新登入"),
+      error: sessionError || new Error("登入狀態已失效"),
       errorType: "SESSION_EXPIRED",
     };
   }
@@ -54,25 +42,8 @@ export async function loadMemberProfile(user) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!error && data) {
-    return {
-      data: {
-        ...data,
-        persisted: true,
-      },
-      error: null,
-      errorType: null,
-    };
-  }
-
-  if (!error) {
-    return {
-      data: buildFallbackProfile(user),
-      error: null,
-      errorType: null,
-    };
-  }
-
+  if (!error && data) return { data: { ...data, persisted: true }, error: null, errorType: null };
+  if (!error) return { data: buildFallbackProfile(user), error: null, errorType: null };
   return {
     data: null,
     error,
@@ -81,45 +52,19 @@ export async function loadMemberProfile(user) {
 }
 
 export async function updateMemberProfile(user, profile) {
-  if (!memberSupabase || !user?.id) {
-    return { error: new Error("登入狀態失效") };
-  }
+  if (!memberSupabase || !user?.id) return { error: new Error("登入狀態已失效") };
 
-  const currentAuthEmail = String(user.email || "").toLowerCase();
-  const emailChanged = profile.email !== currentAuthEmail;
-  const authPayload = {
-    data: {
-      full_name: profile.full_name,
-      account: profile.account,
-      real_phone: profile.real_phone,
-      contact_email: profile.email,
-    },
-  };
+  const fullName = String(profile.full_name || "").trim();
+  const phone = String(profile.real_phone || "").trim();
+  const { error: authError } = await memberSupabase.auth.updateUser({
+    data: { full_name: fullName, real_phone: phone },
+  });
+  if (authError) return { error: authError };
 
-  if (emailChanged) {
-    authPayload.email = profile.email;
-  }
-
-  const { error: authError } = await memberSupabase.auth.updateUser(authPayload);
-  if (authError) {
-    return { error: authError };
-  }
-
-  const { error: profileError } = await memberSupabase.from("member_profiles").upsert(
-    {
-      user_id: user.id,
-      full_name: profile.full_name,
-      account: profile.account,
-      email: profile.email,
-      real_phone: profile.real_phone,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
-
-  if (profileError) {
-    return { error: profileError };
-  }
-
-  return { error: null, emailChanged };
+  const { data, error } = await memberSupabase.rpc("complete_current_line_member_profile", {
+    p_full_name: fullName,
+    p_real_phone: phone,
+  });
+  const savedProfile = Array.isArray(data) ? data[0] || null : data;
+  return { data: savedProfile, error };
 }

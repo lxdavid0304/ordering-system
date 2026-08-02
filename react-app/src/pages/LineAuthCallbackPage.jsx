@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { configOk } from "../lib/config";
 import { memberSupabase } from "../lib/supabase";
 import { hasCompletedMemberProfile, loadMemberProfile } from "../services/profileService";
+import { ensureLineMemberBinding } from "../services/lineService";
 
 function readOAuthError() {
   const search = new URLSearchParams(window.location.search);
@@ -42,6 +43,15 @@ export default function LineAuthCallbackPage() {
           return;
         }
         setMessage("LINE 登入完成，正在確認會員資料...");
+
+        const bindingResult = await ensureLineMemberBinding();
+        if (!active) {
+          return;
+        }
+        if (bindingResult.error) {
+          setError("LINE 會員綁定失敗，請確認使用的 LINE 帳號後再試一次。");
+          return;
+        }
 
         const profileResult = await loadMemberProfile(session.user);
         if (!active) {
