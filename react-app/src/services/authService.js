@@ -19,6 +19,18 @@ export async function loginMemberWithLine(redirectTo) {
   return { success: !error, error };
 }
 
+export function isLineMemberSession(session) {
+  const user = session?.user;
+  const appMetadata = user?.app_metadata || {};
+  const providers = [
+    appMetadata.provider,
+    ...(Array.isArray(appMetadata.providers) ? appMetadata.providers : []),
+    ...(Array.isArray(user?.identities) ? user.identities.map((identity) => identity?.provider) : []),
+  ];
+
+  return providers.some((provider) => provider === appConfig.LINE_AUTH_PROVIDER || provider === "custom:line" || provider === "line");
+}
+
 export function getLineLoginErrorText(error) {
   const code = String(error?.code || "").toLowerCase();
   const message = String(error?.message || "").trim();

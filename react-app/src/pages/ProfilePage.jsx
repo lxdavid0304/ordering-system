@@ -27,7 +27,6 @@ export default function ProfilePage() {
   const [lineMessage, setLineMessage] = useState({ text: "", type: "" });
   const [lineBusy, setLineBusy] = useState(false);
   const profileReady = Boolean(profilePersisted && profileSnapshot?.full_name && profileSnapshot?.real_phone);
-  const profileInitial = (form.full_name || "會").trim().slice(0, 1).toUpperCase();
 
   useEffect(() => {
     let active = true;
@@ -78,10 +77,8 @@ export default function ProfilePage() {
     };
   }, [signOut, user]);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function saveProfile() {
     if (!editing) return;
-    const isFirstProfileSetup = !profilePersisted;
     const nextProfile = {
       full_name: form.full_name.trim(),
       real_phone: normalizePhone(form.real_phone),
@@ -110,7 +107,12 @@ export default function ProfilePage() {
     setProfilePersisted(true);
     setEditing(false);
     setMessage({ text: "會員資料已儲存。", type: "success" });
-    if (isFirstProfileSetup) window.setTimeout(() => navigate("/order", { replace: true }), 700);
+    window.setTimeout(() => navigate("/order", { replace: true }), 700);
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    void saveProfile();
   }
 
   function cancelEdit() {
@@ -142,14 +144,13 @@ export default function ProfilePage() {
       <section className="profile-page-section" id="profileCard" aria-label="會員資料">
         <header className="profile-summary-band">
           <div className="profile-identity">
-            <div className="profile-avatar" aria-hidden="true">{profileInitial}</div>
+            <div className="profile-avatar" aria-hidden="true"><UserRound size={30} strokeWidth={2.25} /></div>
             <div>
               <p className="section-eyebrow">LINE MEMBER</p>
               <div className="profile-title-row">
                 <h2>{form.full_name || "LINE 會員"}</h2>
                 {profileReady ? <span className="profile-verified"><BadgeCheck size={15} />已完成</span> : null}
               </div>
-              <p className="profile-account">LINE 登入會員</p>
             </div>
           </div>
           <div className="profile-summary-actions">
@@ -173,7 +174,7 @@ export default function ProfilePage() {
             </div>
             <div className="profile-field-grid">
               <label className="profile-field">
-                <span><UserRound size={16} />姓名</span>
+                <span><UserRound size={16} />姓名（請填寫真實姓名）</span>
                 <input className="profile-input" type="text" required readOnly={!editing} value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
               </label>
               <label className="profile-field">
@@ -182,7 +183,7 @@ export default function ProfilePage() {
               </label>
             </div>
             <div className={`profile-save-row${editing ? "" : " hidden"}`}>
-              <button type="submit" className="primary profile-action-button"><Save size={17} />{profilePersisted ? "儲存變更" : "完成會員資料"}</button>
+              <button type="button" className="primary profile-action-button" onClick={() => void saveProfile()}><Save size={17} />{profilePersisted ? "儲存變更" : "完成會員資料"}</button>
             </div>
             <FormMessage text={message.text} type={message.type} />
           </section>
@@ -191,7 +192,6 @@ export default function ProfilePage() {
             <div className="profile-section-icon security"><ShieldCheck size={20} /></div>
             <p className="section-eyebrow">LINE ACCOUNT</p>
             <h3 id="profileSecurityTitle">LINE 登入</h3>
-            <p>此帳號使用 LINE 驗證，不需要 Email、密碼或綁定碼。</p>
             <div className="profile-line-section">
               <div className="profile-section-icon line"><BellRing size={20} /></div>
               <p className="section-eyebrow">ORDER NOTIFICATIONS</p>

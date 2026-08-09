@@ -11,7 +11,10 @@ function ScopedAuthProvider({ children, client, context, errorLabel, resolveAdmi
 
   const signOut = useCallback(async () => {
     if (client) {
-      await client.auth.signOut();
+      // A merged/deleted Auth user can no longer revoke a server session.
+      // Clear this browser's persisted session regardless so it cannot keep
+      // rendering as a stale signed-in account.
+      await client.auth.signOut({ scope: "local" });
     }
   }, [client]);
 
@@ -85,10 +88,7 @@ function ScopedAuthProvider({ children, client, context, errorLabel, resolveAdmi
     setAdminLoading(true);
 
     client
-      .from("admin_users")
-      .select("user_id")
-      .eq("user_id", session.user.id)
-      .maybeSingle()
+      .rpc("current_user_is_admin")
       .then(({ data, error }) => {
         if (!active) {
           return;

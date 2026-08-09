@@ -75,12 +75,15 @@ function messageFor(eventType: string, campaign: Record<string, unknown>, pickup
       "截止前仍可回到網站調整點餐。",
     ].filter(Boolean).join("\n");
   }
-  if (eventType === "campaign_ready") {
+  if (eventType === "campaign_ready" || eventType === "pickup_location_ready") {
+    const pickupReadyAt = payload.pickup_ready_at || campaign.pickup_ready_at;
+    const customMessage = String(payload.custom_message || "").trim();
     return [
       "🍴 快閃熱食｜已可取餐",
       title,
-      `實際取餐　${formatCompactDate(campaign.pickup_ready_at)}`,
+      `實際取餐　${formatCompactDate(pickupReadyAt)}`,
       pickupLocation ? `交貨地點　${pickupLocation}` : null,
+      customMessage ? `\n${customMessage}` : null,
       "請依你選擇的交貨地點前往取餐。",
     ].filter(Boolean).join("\n");
   }
@@ -215,7 +218,7 @@ serve(async (request) => {
       }).eq("id", job.id);
       continue;
     }
-    const pickupLocation = job.event_type === "order_submitted" || job.event_type === "order_updated"
+    const pickupLocation = job.event_type === "order_submitted" || job.event_type === "order_updated" || job.event_type === "pickup_location_ready"
       ? String(payload.pickup_location || order?.pickup_location || "")
       : order?.pickup_location || "";
     const pushError = await pushMessage(lineToken, binding.line_user_id, messageFor(job.event_type, campaign, pickupLocation, payload));

@@ -213,7 +213,7 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
     }
     await completeUpdate(
       data,
-      nextStatus === "ready_pickup" ? "商品已買齊，訂單已設為待取貨。" : "款項已付清，訂單已完成。",
+      nextStatus === "ready_pickup" ? "商品已買齊，已加入待交貨清單；交貨時間將由地點通知統一發送。" : "款項已付清，訂單已完成。",
       notificationError
     );
   }
@@ -360,7 +360,7 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
                     ) : null}
                   </div>
                 <button type="button" className="admin-primary-button admin-workflow-action" disabled={busy === "workflow" || finalTotal < paidAmount} onClick={handleWorkflowAdvance}>
-                  <Package size={16} />{busy === "workflow" ? "更新中" : "商品已買齊，設為待取貨"}
+                  <Package size={16} />{busy === "workflow" ? "更新中" : "商品已買齊，加入待交貨清單"}
                 </button>
                 </>
               ) : null}

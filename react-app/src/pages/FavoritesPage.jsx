@@ -226,15 +226,21 @@ export default function FavoritesPage() {
         <div className="favorites-product-grid">
           {visibleFavorites.map((favorite) => {
             const product = popularProductMap[normalizeProductName(favorite.product_name)];
+            const hasProductImage = Boolean(product?.image_url);
             const unitPrice = Number(product?.unit_price ?? favorite.unit_price ?? 0);
             const quantity = quantities[favorite.id] || 1;
             return (
-              <article key={favorite.id} className={`favorites-product-card${product?.image_url ? " has-image" : ""}`}>
-                {product?.image_url ? (
+              <article key={favorite.id} className={`favorites-product-card${hasProductImage ? " has-image" : " has-placeholder"}`}>
+                {hasProductImage ? (
                   <div className="favorites-product-media">
                     <img src={product.image_url} alt="" loading="lazy" decoding="async" />
                   </div>
-                ) : null}
+                ) : (
+                  <div className="favorites-product-media favorites-product-placeholder" aria-hidden="true">
+                    <Package size={42} strokeWidth={1.8} />
+                    <span>{product ? "熱門商品" : "自填商品"}</span>
+                  </div>
+                )}
                 <div className="favorites-product-body">
                   <div className="favorites-product-head">
                     <div>

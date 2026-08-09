@@ -42,7 +42,6 @@ export default function MemberAuthPanel() {
           {busy ? "正在連線…" : "使用 LINE 登入／綁定會員"}
         </button>
         <p className="member-auth-benefits">
-          <span>不用 Email 與密碼</span>
           <span>下單後自動接收 LINE 通知</span>
         </p>
         <FormMessage text={message.text} type={message.type} />

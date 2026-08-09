@@ -13,12 +13,16 @@
 - 熱門商品管理：售價、成本、規格、分類、供應連結、啟用狀態與成本區間。
 - 營運報表：今日、週、月、全期間的訂單、收款、利潤與趨勢。
 - LINE 官方帳號綁定、通知開關、訂單狀態推播、佇列診斷與失敗重試。
+- 一般代購可依四個交貨地點整理待取貨訂單；商品買齊時不立即通知，管理者設定各地點交貨時間後才群發一次。
+- 快閃熱食可在截止後彙總採買清單，並依四個交貨地點分別核對訂單、設定交貨時間與補充訊息後通知會員。
 
-## 2026-07-26 介面與訂單管理更新
+## 2026-08-10 現行營運規格
 
 - 手機版訂購頁改為單欄、緊湊的採買流程：交貨點、商品卡、購物清單與會員選單皆針對窄螢幕重排；桌面版維持原有的雙欄工作流與三步驟引導。
 - 首屏文案統一為「把想要的商品放進清單，採買的事交給我們。」「不必出門，也能把日常補貨安排得剛剛好。」
 - 後台訂單明細新增硬刪除操作。刪除會連帶移除 `order_items`、`order_events` 與 LINE 通知 job；只適用於確定取消且不需保留訂單紀錄的情況。
+- 熱門商品的會員售價已含運費；只有自填商品按數量每件加收 20 元。快閃熱食品項則以「現場價加每件 20 元」形成會員看到的含運價，訂單總額只顯示一次。
+- 快閃熱食後台採買區採「左側商品彙總、右側交貨地點與名單」工作流；每個地點獨立設定交貨時間，同會員在同一地點本次只會收到一則通知。
 
 ## 訂單狀態
 
@@ -41,7 +45,7 @@ fulfilled        已完成
 archived         歷史紀錄
 ```
 
-狀態更新會建立 LINE 通知工作。通知內容使用狀態異動當下的訂單快照，包含交貨地點、總額、已付訂金、尾款與價格異動資訊。
+`pending_deposit` 與 `open` 的狀態異動會建立 LINE 通知工作。`ready_pickup` 是內部「已加入待交貨清單」的里程碑：保留實際金額、尾款與狀態，但不立即發送 LINE。管理者須在訂單管理選定交貨地點與交貨時間，才對該地點 `ready_pickup` 會員群發一次通知。通知內容使用建立當下的快照，包含交貨地點、總額、已付訂金、尾款與價格異動資訊。
 
 ## 技術架構
 
@@ -60,6 +64,8 @@ supabase/functions/create-order/   安全建立訂單
 supabase/functions/lookup-order/   訂單查詢
 supabase/functions/line-webhook/   LINE follow/message webhook
 supabase/functions/line-notify/    LINE 通知佇列工作者
+supabase/functions/flash-food-notify/
+                                    快閃熱食通知佇列工作者
 supabase/functions/notification-diagnostics/
                                    管理者通知診斷
 supabase/migrations/               依時間排序的資料庫變更
@@ -102,9 +108,9 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-若 CLI 提示缺少資料庫密碼，先設定 `SUPABASE_DB_PASSWORD`，或在 Supabase Dashboard 的 SQL Editor 依序套用尚未執行的 migration。`sql/schema.sql` 是完整參考與初始化來源，不是既有雲端資料庫的重複套用腳本。
+若 CLI 提示缺少資料庫密碼，先設定 `SUPABASE_DB_PASSWORD`。只有在先確認現有物件與資料相容時，才能透過 Supabase Dashboard 的 SQL Editor 手動套用 migration；手動成功後也必須立即補齊 `supabase_migrations.schema_migrations` 履歷，不能只讓功能物件存在。`sql/schema.sql` 是完整參考與初始化來源，不是既有雲端資料庫的重複套用腳本。
 
-本版新增 `20260726000000_admin_delete_order.sql`。完成前端部署前，必須先將此 migration 套用到正式資料庫，否則後台刪除按鈕會顯示資料庫功能尚未更新。
+截至 2026-08-10，遠端 migration 履歷已同步到 `20260810010000_flash_food_pickup_location_custom_message.sql`。本次重要增量包含：依地點交貨通知、待取貨延後通知、熱門商品含運、快閃熱食依地點通知、同會員去重與自訂訊息。
 
 ### Edge Function
 
@@ -113,6 +119,7 @@ supabase functions deploy create-order
 supabase functions deploy lookup-order
 supabase functions deploy line-webhook
 supabase functions deploy line-notify
+supabase functions deploy flash-food-notify
 supabase functions deploy notification-diagnostics
 ```
 
@@ -148,9 +155,10 @@ LINE 狀態通知的手動驗收流程：
 
 1. 建立一筆測試訂單並確認已綁定 LINE。
 2. 管理後台確認訂金，驗證「採買進行中」。
-3. 設定實際總額並標記商品買齊，驗證「待取貨」及價格異動資訊。
-4. 儲存尾款，驗證「已完成」。
-5. 在訂單明細的「LINE 通知」區塊確認 job 為 `sent`；若失敗，查看診斷資訊與錯誤訊息。
+3. 設定實際總額並按「商品已買齊，加入待交貨清單」，驗證狀態成為 `ready_pickup`、金額正確且沒有新的待取貨 LINE job。
+4. 在訂單管理選擇交貨地點、設定交貨時間，確認只通知該地點 `ready_pickup` 的會員；同會員多筆訂單只收到一則。
+5. 儲存尾款或批次確認尾款後，驗證訂單成為「已完成」。
+6. 快閃熱食截止後，核對商品彙總、依地點名單與交貨通知；確認可選填的群發訊息會帶入該地點 LINE 通知。
 
 ## Git 交付規則
 

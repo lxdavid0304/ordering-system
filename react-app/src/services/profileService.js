@@ -56,11 +56,9 @@ export async function updateMemberProfile(user, profile) {
 
   const fullName = String(profile.full_name || "").trim();
   const phone = String(profile.real_phone || "").trim();
-  const { error: authError } = await memberSupabase.auth.updateUser({
-    data: { full_name: fullName, real_phone: phone },
-  });
-  if (authError) return { error: authError };
-
+  // Keep profile completion in one database transaction. Updating Auth user
+  // metadata first emits USER_UPDATED, which reloads the profile page and can
+  // interrupt the first-time LINE member completion flow.
   const { data, error } = await memberSupabase.rpc("complete_current_line_member_profile", {
     p_full_name: fullName,
     p_real_phone: phone,

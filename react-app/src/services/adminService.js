@@ -63,9 +63,39 @@ export async function loadAdminOrders({ filters, page, pageSize }) {
   };
 }
 
+export async function loadAdminPurchaseOrders() {
+  if (!adminSupabase) return missingClient({ data: [], count: 0 });
+
+  const items = [];
+  let offset = 0;
+  let total = 0;
+
+  do {
+    const { data, error } = await adminSupabase.rpc("admin_list_orders", {
+      ...normalizeFilters({ status: "open" }),
+      p_limit: 100,
+      p_offset: offset,
+    });
+    if (error) return { data: items, count: total, error };
+
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    total = Number(data?.total || 0);
+    items.push(...pageItems);
+    offset += pageItems.length;
+  } while (offset < total);
+
+  return { data: items, count: total, error: null };
+}
+
 export async function loadAdminSummary() {
   if (!adminSupabase) return missingClient();
   return adminSupabase.rpc("admin_order_summary");
+}
+
+export async function loadAdminDeliveryLocationSummary() {
+  if (!adminSupabase) return missingClient({ data: [] });
+  const { data, error } = await adminSupabase.rpc("admin_delivery_location_summary");
+  return { data: Array.isArray(data) ? data : [], error };
 }
 
 export async function loadAdminOperatingReport(period = "month") {
@@ -78,6 +108,16 @@ export async function drainLineNotifications() {
   return adminSupabase.functions.invoke("line-notify", { body: {} });
 }
 
+export async function sendDeliveryLocationNotification(deliveryLocation, pickupAt) {
+  if (!adminSupabase) return missingClient();
+  return adminSupabase.functions.invoke("line-notify", {
+    body: {
+      delivery_location: String(deliveryLocation || "").trim(),
+      pickup_at: pickupAt || null,
+    },
+  });
+}
+
 export async function updateAdminOrder(orderId, payload, reason = "") {
   if (!adminSupabase) return missingClient();
   const result = await adminSupabase.rpc("admin_update_order", {
@@ -88,7 +128,7 @@ export async function updateAdminOrder(orderId, payload, reason = "") {
   });
 
   const order = normalizeOrderResult(result.data);
-  if (!result.error && payload.status && order?.status === payload.status) {
+  if (!result.error && payload.status && payload.status !== "ready_pickup" && order?.status === payload.status) {
     const notificationError = await sendLineNotification(orderId, payload.status);
     return { ...result, data: order, notificationError };
   }
@@ -110,12 +150,7 @@ export async function markAdminOrderReadyForPickup(orderId, finalTotalAmount, re
   });
 
   const order = normalizeOrderResult(result.data);
-  if (!result.error && order?.status === "ready_pickup") {
-    const notificationError = await sendLineNotification(orderId, "ready_pickup");
-    return { ...result, data: order, notificationError };
-  }
-
-  return { ...result, data: order || result.data };
+  return { ...result, data: order || result.data, notificationError: null };
 }
 
 export async function saveAdminOrderPayment(orderId, payment) {
@@ -213,5 +248,33 @@ export async function bulkUpdateOrders(ids, status, reason = "批次更新") {
     if (error) return { data: updated, error };
     if (data) updated.push(data);
   }
+  return { data: updated, error: null };
+}
+
+export async function bulkCompleteReadyPickupOrders(orders) {
+  const updated = [];
+
+  for (const order of orders) {
+    if (order?.status !== "ready_pickup") {
+      return { data: updated, error: new Error("只有待取貨訂單可以批次完成") };
+    }
+
+    const outstandingAmount = Math.max(
+      0,
+      Number(order.total_amount || 0) - Number(order.deposit_paid_amount || 0) - Number(order.balance_paid_amount || 0)
+    );
+    const paymentMethod =
+      order.balance_payment_method || order.selected_payment_method || order.deposit_payment_method || "cash";
+    const { data, error } = await saveAdminOrderPayment(order.id, {
+      phase: "balance",
+      amount: outstandingAmount,
+      method: paymentMethod,
+      reviewComplete: true,
+    });
+
+    if (error) return { data: updated, error };
+    if (data) updated.push(data);
+  }
+
   return { data: updated, error: null };
 }

@@ -30,12 +30,12 @@ begin
     raise exception 'AUTHENTICATION_REQUIRED' using errcode = '42501';
   end if;
 
-  select coalesce(identity_data->>'sub', identity_data->>'userId')
+  select coalesce(identity.identity_data->>'sub', identity.identity_data->>'userId')
     into v_line_user_id
-  from auth.identities
-  where user_id = auth.uid()
-    and provider in ('custom:line', 'line')
-  order by last_sign_in_at desc nulls last
+  from auth.identities identity
+  where identity.user_id = auth.uid()
+    and identity.provider in ('custom:line', 'line')
+  order by identity.last_sign_in_at desc nulls last
   limit 1;
 
   if coalesce(v_line_user_id, '') !~ '^U[0-9a-f]{32}$' then
@@ -44,9 +44,9 @@ begin
 
   if exists (
     select 1
-    from public.member_line_bindings
-    where line_user_id = v_line_user_id
-      and user_id <> auth.uid()
+    from public.member_line_bindings binding
+    where binding.line_user_id = v_line_user_id
+      and binding.user_id <> auth.uid()
   ) then
     raise exception 'LINE_IDENTITY_ALREADY_LINKED' using errcode = '23505';
   end if;
@@ -56,7 +56,7 @@ begin
   ) values (
     auth.uid(), v_line_user_id, true, now(), now(), null
   )
-  on conflict (user_id) do update
+  on conflict on constraint member_line_bindings_pkey do update
     set line_user_id = excluded.line_user_id,
         notifications_enabled = true,
         updated_at = now(),
@@ -99,9 +99,9 @@ begin
     raise exception 'VALID_PHONE_REQUIRED' using errcode = '22023';
   end if;
 
-  select account, email into v_account, v_email
-  from public.member_profiles
-  where user_id = auth.uid();
+  select profile.account, profile.email into v_account, v_email
+  from public.member_profiles profile
+  where profile.user_id = auth.uid();
 
   v_account := coalesce(nullif(v_account, ''), 'line' || substr(replace(auth.uid()::text, '-', ''), 1, 20));
 
@@ -110,7 +110,7 @@ begin
   ) values (
     auth.uid(), v_full_name, v_account, v_email, v_phone, now(), now()
   )
-  on conflict (user_id) do update
+  on conflict on constraint member_profiles_pkey do update
     set full_name = excluded.full_name,
         real_phone = excluded.real_phone,
         updated_at = now();

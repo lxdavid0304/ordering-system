@@ -8,7 +8,7 @@ alter table public.flash_food_notification_jobs
 
 alter table public.flash_food_notification_jobs
   add constraint flash_food_notification_jobs_event_type_check
-  check (event_type in ('campaign_opened', 'campaign_cancelled', 'campaign_ready'));
+  check (event_type in ('campaign_opened', 'campaign_cancelled', 'campaign_ready', 'order_submitted', 'order_updated'));
 
 create or replace function public.admin_mark_flash_food_campaign_ready(
   p_campaign_id uuid,

@@ -22,6 +22,9 @@ const MAX_DELIVERY_ATTEMPTS = 8;
 const STALE_PROCESSING_MS = 30 * 1000;
 const RETRY_DELAYS_MS = [15 * 1000, 30 * 1000, 60 * 1000, 2 * 60 * 1000, 5 * 60 * 1000];
 const knownStatuses = new Set(Object.keys(statusLabels));
+const deliveryLocations = new Set(["明德樓", "據德樓", "蘊德樓", "機車停車場"]);
+const activeDeliveryStatuses = ["ready_pickup"];
+const DELIVERY_NOTIFICATION_LIMIT = 50;
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -32,6 +35,20 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 
 function formatCurrency(value: unknown) {
   return new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 }).format(Number(value || 0));
+}
+
+function formatPickupDateTime(value: unknown) {
+  const date = new Date(String(value || ""));
+  if (Number.isNaN(date.getTime())) return "時間待確認";
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function toAmount(value: unknown, fallback = 0) {
@@ -185,16 +202,85 @@ serve(async (request) => {
 
   let requestedOrderId = "";
   let requestedStatus = "";
+  let requestedDeliveryLocation = "";
+  let requestedPickupAt = "";
   try {
     const body = await request.json();
     requestedOrderId = typeof body?.order_id === "string" ? body.order_id : "";
     const targetStatus = typeof body?.target_status === "string" ? body.target_status : "";
     requestedStatus = knownStatuses.has(targetStatus) ? targetStatus : "";
+    requestedDeliveryLocation = typeof body?.delivery_location === "string" ? body.delivery_location.trim() : "";
+    requestedPickupAt = typeof body?.pickup_at === "string" ? body.pickup_at : "";
   } catch {
     // Empty body processes all queued notifications.
   }
 
+  const requestedDeliveryNotification = Boolean(requestedDeliveryLocation || requestedPickupAt);
+  if (requestedDeliveryNotification) {
+    if (!deliveryLocations.has(requestedDeliveryLocation)) {
+      return jsonResponse({ error: "Invalid delivery location" }, 400);
+    }
+    if (Number.isNaN(new Date(requestedPickupAt).getTime())) {
+      return jsonResponse({ error: "Invalid pickup time" }, 400);
+    }
+  }
+
   const now = Date.now();
+  let deliveryNotificationBatchId = "";
+  let deliveryNotificationRecipients = 0;
+  if (requestedDeliveryNotification) {
+    const { data: activeOrders, error: activeOrdersError } = await supabase
+      .from("orders")
+      .select("id, user_id, created_at")
+      .eq("delivery_location", requestedDeliveryLocation)
+      .in("status", activeDeliveryStatuses)
+      .not("user_id", "is", null)
+      .order("created_at", { ascending: false });
+    if (activeOrdersError) return jsonResponse({ error: "Delivery recipients are unavailable" }, 500);
+
+    const recipientOrders = new Map<string, { id: string; user_id: string }>();
+    for (const order of activeOrders || []) {
+      if (typeof order.user_id !== "string" || !order.user_id || recipientOrders.has(order.user_id)) continue;
+      recipientOrders.set(order.user_id, { id: String(order.id), user_id: order.user_id });
+    }
+    if (!recipientOrders.size) {
+      return jsonResponse({ sent: 0, skipped: 0, failed: 0, queued: 0, recipients: 0 });
+    }
+
+    const { data: deliveryBatch, error: deliveryBatchError } = await supabase
+      .from("delivery_location_notification_batches")
+      .insert({
+        delivery_location: requestedDeliveryLocation,
+        pickup_at: new Date(requestedPickupAt).toISOString(),
+        recipient_count: recipientOrders.size,
+        created_by: (await supabase.auth.getUser(token)).data.user?.id,
+      })
+      .select("id")
+      .single();
+    if (deliveryBatchError || !deliveryBatch?.id) {
+      return jsonResponse({ error: "This delivery notification has already been created" }, 409);
+    }
+    deliveryNotificationBatchId = String(deliveryBatch.id);
+    deliveryNotificationRecipients = recipientOrders.size;
+
+    const { error: deliveryJobsError } = await supabase.from("line_notification_jobs").insert(
+      Array.from(recipientOrders.values()).map((order) => ({
+        order_id: order.id,
+        user_id: order.user_id,
+        event_type: "delivery_location_ready",
+        delivery_notification_batch_id: deliveryNotificationBatchId,
+        payload: {
+          delivery_location: requestedDeliveryLocation,
+          pickup_at: new Date(requestedPickupAt).toISOString(),
+        },
+      }))
+    );
+    if (deliveryJobsError) {
+      await supabase.from("delivery_location_notification_batches").delete().eq("id", deliveryNotificationBatchId);
+      return jsonResponse({ error: "Delivery notification queue is unavailable" }, 500);
+    }
+  }
+
   if (supportsRetrySchema) {
     const staleBefore = new Date(now - STALE_PROCESSING_MS).toISOString();
     let staleJobsQuery = supabase
@@ -245,13 +331,19 @@ serve(async (request) => {
     .from("line_notification_jobs")
     .select(
       supportsRetrySchema
-        ? "id, order_id, user_id, attempts, payload, status, created_at, next_attempt_at"
-        : "id, order_id, user_id, attempts, payload, status, created_at"
+        ? "id, order_id, user_id, event_type, delivery_notification_batch_id, attempts, payload, status, created_at, next_attempt_at"
+        : "id, order_id, user_id, event_type, delivery_notification_batch_id, attempts, payload, status, created_at"
     )
     .in("status", ["pending", "failed"])
-    .order("created_at", { ascending: true })
-    .limit(5);
+    .order("created_at", { ascending: true });
   if (requestedOrderId) jobsQuery = jobsQuery.eq("order_id", requestedOrderId);
+  if (deliveryNotificationBatchId) {
+    jobsQuery = jobsQuery
+      .eq("delivery_notification_batch_id", deliveryNotificationBatchId)
+      .limit(DELIVERY_NOTIFICATION_LIMIT);
+  } else {
+    jobsQuery = jobsQuery.limit(5);
+  }
   const { data: queuedJobs, error: jobsError } = await jobsQuery;
   if (jobsError) return jsonResponse({ error: "Notification queue unavailable" }, 500);
   const jobs = (queuedJobs || [])
@@ -261,7 +353,7 @@ serve(async (request) => {
         (!requestedStatus || getPayloadStatus(job.payload) === requestedStatus) &&
         (job.status === "pending" || !supportsRetrySchema || isRetryDue(job.next_attempt_at, now))
     )
-    .slice(0, 5);
+    .slice(0, deliveryNotificationBatchId ? DELIVERY_NOTIFICATION_LIMIT : 5);
 
   let sent = 0;
   let skipped = 0;
@@ -270,7 +362,7 @@ serve(async (request) => {
     // An explicit status request is the latest state chosen by the admin.
     // Earlier notifications were superseded above, so they must not hold back
     // the current update even if an old worker invocation is still finishing.
-    if (!requestedStatus) {
+    if (!requestedStatus && job.event_type === "order_status_changed") {
       const { data: earlierJobs } = await supabase
         .from("line_notification_jobs")
         .select("id, attempts")
@@ -315,8 +407,21 @@ serve(async (request) => {
         .eq("id", job.order_id)
         .maybeSingle(),
     ]);
+    const { data: deliveryBatch } = job.event_type === "delivery_location_ready"
+      ? await supabase
+        .from("delivery_location_notification_batches")
+        .select("delivery_location, pickup_at")
+        .eq("id", job.delivery_notification_batch_id)
+        .maybeSingle()
+      : { data: null };
 
-    if (!binding || !binding.notifications_enabled || binding.blocked_at || !order) {
+    if (
+      !binding ||
+      !binding.notifications_enabled ||
+      binding.blocked_at ||
+      !order ||
+      (job.event_type === "delivery_location_ready" && !deliveryBatch)
+    ) {
       await supabase
         .from("line_notification_jobs")
         .update({
@@ -333,62 +438,71 @@ serve(async (request) => {
     }
 
     const notificationPayload = readPayload(job.payload);
-    const queuedStatus = notificationPayload.to_status;
-    const notificationStatus =
-      typeof queuedStatus === "string" ? queuedStatus : String(order.status);
-    const productText = formatOrderProducts(
-      Array.isArray(order.order_items) ? order.order_items : []
-    );
-    const totalAmount = toAmount(notificationPayload.total_amount, Number(order.total_amount) || 0);
-    const hasQuotedSnapshot = Object.prototype.hasOwnProperty.call(notificationPayload, "quoted_total_amount");
-    const quotedValue = hasQuotedSnapshot ? notificationPayload.quoted_total_amount : order.quoted_total_amount;
-    const quotedTotalAmount = quotedValue == null
-      ? null
-      : toAmount(quotedValue);
-    const depositAmount = toAmount(notificationPayload.deposit_paid_amount, Number(order.deposit_paid_amount) || 0);
-    const paidBalanceAmount = toAmount(notificationPayload.balance_paid_amount, Number(order.balance_paid_amount) || 0);
-    const deliveryLocation = String(notificationPayload.delivery_location || order.delivery_location || "");
-    const balanceAmount = Math.max(
-      0,
-      totalAmount - depositAmount - paidBalanceAmount
-    );
-    const priceChangeLine = notificationStatus === "ready_pickup"
-      && (notificationPayload.price_adjusted === true || (quotedTotalAmount !== null && quotedTotalAmount !== totalAmount))
-      ? `價格異動：原訂單金額 ${formatCurrency(quotedTotalAmount)} 元，實際總額 ${formatCurrency(totalAmount)} 元`
-      : null;
-    const totalLine = `訂單金額：${formatCurrency(totalAmount)} 元`;
-    const depositLine = `訂金金額：${formatCurrency(depositAmount)} 元`;
-    const balanceLine = `尾款金額：${formatCurrency(balanceAmount)} 元`;
-    const statusLines =
-      notificationStatus === "pending_deposit"
-        ? [
-            productText ? `商品：${productText}` : null,
-            `交貨地點：${deliveryLocation || "未指定"}`,
-            totalLine,
-          ]
-        : notificationStatus === "open"
-          ? totalAmount < 300
+    const text = job.event_type === "delivery_location_ready"
+      ? [
+        "【交貨通知】",
+        `交貨地點：${String(deliveryBatch?.delivery_location || "未指定")}`,
+        `交貨時間：${formatPickupDateTime(deliveryBatch?.pickup_at)}`,
+        "商品已完成採買，請依時間前往取貨。",
+      ].join("\n")
+      : (() => {
+        const queuedStatus = notificationPayload.to_status;
+        const notificationStatus =
+          typeof queuedStatus === "string" ? queuedStatus : String(order.status);
+        const productText = formatOrderProducts(
+          Array.isArray(order.order_items) ? order.order_items : []
+        );
+        const totalAmount = toAmount(notificationPayload.total_amount, Number(order.total_amount) || 0);
+        const hasQuotedSnapshot = Object.prototype.hasOwnProperty.call(notificationPayload, "quoted_total_amount");
+        const quotedValue = hasQuotedSnapshot ? notificationPayload.quoted_total_amount : order.quoted_total_amount;
+        const quotedTotalAmount = quotedValue == null
+          ? null
+          : toAmount(quotedValue);
+        const depositAmount = toAmount(notificationPayload.deposit_paid_amount, Number(order.deposit_paid_amount) || 0);
+        const paidBalanceAmount = toAmount(notificationPayload.balance_paid_amount, Number(order.balance_paid_amount) || 0);
+        const deliveryLocation = String(notificationPayload.delivery_location || order.delivery_location || "");
+        const balanceAmount = Math.max(
+          0,
+          totalAmount - depositAmount - paidBalanceAmount
+        );
+        const priceChangeLine = notificationStatus === "ready_pickup"
+          && (notificationPayload.price_adjusted === true || (quotedTotalAmount !== null && quotedTotalAmount !== totalAmount))
+          ? `價格異動：原訂單金額 ${formatCurrency(quotedTotalAmount)} 元，實際總額 ${formatCurrency(totalAmount)} 元`
+          : null;
+        const totalLine = `訂單金額：${formatCurrency(totalAmount)} 元`;
+        const depositLine = `訂金金額：${formatCurrency(depositAmount)} 元`;
+        const balanceLine = `尾款金額：${formatCurrency(balanceAmount)} 元`;
+        const statusLines =
+          notificationStatus === "pending_deposit"
             ? [
-                productText ? `購買商品：${productText}` : null,
-                `交貨地點：${deliveryLocation || "未指定"}`,
-                totalLine,
-                depositLine,
-              ]
-            : [totalLine, depositLine]
-          : notificationStatus === "ready_pickup"
-            ? [
-                priceChangeLine,
-                `交貨地點：${deliveryLocation || "未指定"}`,
-                totalLine,
-                balanceLine,
-              ]
-            : [`交貨地點：${deliveryLocation || "未指定"}`, totalLine];
-    const text = [
-      "【代購訂單狀態更新】",
-      `訂單 #${String(order.id).slice(0, 8)}`,
-      `目前狀態：${statusLabels[notificationStatus] || "處理中"}`,
-      ...statusLines.filter(Boolean),
-    ].join("\n");
+              productText ? `商品：${productText}` : null,
+              `交貨地點：${deliveryLocation || "未指定"}`,
+              totalLine,
+            ]
+            : notificationStatus === "open"
+              ? totalAmount < 300
+                ? [
+                  productText ? `購買商品：${productText}` : null,
+                  `交貨地點：${deliveryLocation || "未指定"}`,
+                  totalLine,
+                  depositLine,
+                ]
+                : [totalLine, depositLine]
+              : notificationStatus === "ready_pickup"
+                ? [
+                  priceChangeLine,
+                  `交貨地點：${deliveryLocation || "未指定"}`,
+                  totalLine,
+                  balanceLine,
+                ]
+                : [`交貨地點：${deliveryLocation || "未指定"}`, totalLine];
+        return [
+          "【代購訂單狀態更新】",
+          `訂單 #${String(order.id).slice(0, 8)}`,
+          `目前狀態：${statusLabels[notificationStatus] || "處理中"}`,
+          ...statusLines.filter(Boolean),
+        ].join("\n");
+      })();
     const pushError = await deliverMessage(lineToken, binding.line_user_id, text);
     if (pushError) {
       const attempts = Number(job.attempts || 0) + 1;
@@ -426,5 +540,12 @@ serve(async (request) => {
     }
   }
 
-  return jsonResponse({ sent, skipped, failed, queued: (jobs || []).length });
+  return jsonResponse({
+    sent,
+    skipped,
+    failed,
+    queued: (jobs || []).length,
+    recipients: deliveryNotificationRecipients,
+    delivery_notification_batch_id: deliveryNotificationBatchId || null,
+  });
 });

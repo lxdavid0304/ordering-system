@@ -13,6 +13,13 @@ const campaignSelect = `
   )
 `;
 
+const adminCampaignSelect = `
+  ${campaignSelect},
+  flash_food_pickup_notices (
+    pickup_location, pickup_at, notified_at, updated_at
+  )
+`;
+
 function sortCampaignItems(campaign) {
   return {
     ...campaign,
@@ -51,8 +58,8 @@ export async function loadAdminFlashFoodCampaigns() {
 
   const { data, error } = await adminSupabase
     .from("flash_food_campaigns")
-    .select(`${campaignSelect}, flash_food_orders (
-      id, status, total_amount, subtotal_amount, shipping_amount, customer_name, phone, pickup_location, note, created_at,
+    .select(`${adminCampaignSelect}, flash_food_orders (
+      id, user_id, status, total_amount, subtotal_amount, shipping_amount, customer_name, phone, pickup_location, note, created_at,
       flash_food_order_items (id, product_name, item_note, unit_price, shipping_fee_per_unit, quantity, total_amount)
     )`)
     .order("created_at", { ascending: false });
@@ -105,6 +112,21 @@ export async function markFlashFoodCampaignReady(campaignId, pickupReadyAt) {
   if (result.error) return result;
   const notification = await adminSupabase.functions.invoke("flash-food-notify", {
     body: { campaign_id: campaignId, event_type: "campaign_ready" },
+  });
+  return { ...result, notificationError: notification.error || (Number(notification.data?.failed || 0) > 0 ? new Error("LINE 通知部分發送失敗") : null) };
+}
+
+export async function notifyFlashFoodPickupLocation(campaignId, pickupLocation, pickupAt, customMessage = "") {
+  if (!adminSupabase) return missingClient();
+  const result = await adminSupabase.rpc("admin_queue_flash_food_pickup_location_notification", {
+    p_campaign_id: campaignId,
+    p_pickup_location: pickupLocation,
+    p_pickup_at: pickupAt,
+    p_message: String(customMessage || "").trim(),
+  });
+  if (result.error) return result;
+  const notification = await adminSupabase.functions.invoke("flash-food-notify", {
+    body: { campaign_id: campaignId, event_type: "pickup_location_ready" },
   });
   return { ...result, notificationError: notification.error || (Number(notification.data?.failed || 0) > 0 ? new Error("LINE 通知部分發送失敗") : null) };
 }

@@ -7,7 +7,7 @@ alter table public.flash_food_orders
 
 drop function if exists public.member_save_flash_food_order(uuid, text, jsonb);
 
-create function public.member_save_flash_food_order(
+create or replace function public.member_save_flash_food_order(
   p_campaign_id uuid,
   p_pickup_location text,
   p_note text,

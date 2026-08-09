@@ -51,6 +51,33 @@ export default function OrderItemRow({
             value={item.unit_price}
             required
             disabled={disabled || Boolean(item.catalog_product_id)}
+            onKeyDown={(event) => {
+              if (Number(item.unit_price) !== 0 || !/^\d$/.test(event.key)) {
+                return;
+              }
+
+              event.preventDefault();
+              onChange({
+                ...item,
+                unit_price: Number(event.key),
+              });
+            }}
+            onPaste={(event) => {
+              if (Number(item.unit_price) !== 0) {
+                return;
+              }
+
+              const pastedPrice = event.clipboardData.getData("text").replace(/\D/g, "");
+              if (!pastedPrice) {
+                return;
+              }
+
+              event.preventDefault();
+              onChange({
+                ...item,
+                unit_price: Number(pastedPrice),
+              });
+            }}
             onChange={(event) =>
               onChange({
                 ...item,

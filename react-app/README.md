@@ -54,8 +54,8 @@ window.APP_CONFIG = {
 再到 **Authentication > URL Configuration** 設定：
 
 1. `Site URL`：`https://stalwart-axolotl-945b6e.netlify.app`
-2. `Redirect URLs`：`https://stalwart-axolotl-945b6e.netlify.app/order`
-3. 本機測試另加入：`http://localhost:5173/order`
+2. `Redirect URLs`：`https://stalwart-axolotl-945b6e.netlify.app/auth/callback`
+3. 本機測試另加入：`http://localhost:5174/auth/callback`
 
 請保留範本中的 `{{ .ConfirmationURL }}`。它會帶入 Supabase 的安全驗證連結與程式傳入的回跳網址。
 

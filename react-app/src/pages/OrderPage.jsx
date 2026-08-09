@@ -598,7 +598,6 @@ export default function OrderPage() {
   return (
     <MemberLayout
       title="Costco 代購填單"
-      subtitle="把想買的商品、預估單價與數量一次整理好，我們會依開放時段協助採買。"
       active="order"
       pageClassName={user ? "order-page order-page-shopping" : "order-page order-page-shopping guest-order-page"}
     >
@@ -606,7 +605,10 @@ export default function OrderPage() {
         <div className="shopping-hero-scale">
           <div className="shopping-hero-copy">
             <span className="eyebrow">Costco Group Buy</span>
-            <h2 className="shopping-hero-desktop-title">把想要的商品放進清單，採買的事交給我們。</h2>
+            <h2 className="shopping-hero-desktop-title">
+              <span>把想要的商品放進清單，</span>
+              <span>採買的事情交給我們。</span>
+            </h2>
             <h2 className="shopping-hero-mobile-title">
               <span>把想要的商品放進清單，</span>
               <span>採買的事交給我們。</span>
@@ -832,7 +834,7 @@ export default function OrderPage() {
             ) : formLocked ? (
               <div className="order-lock-banner warning">
                 <strong>請先完成會員資料</strong>
-                <span>儲存姓名、帳號、電話與 Email 後即可送出訂單。</span>
+                <span>儲存姓名與手機後即可送出訂單。</span>
                 <Link to="/profile">前往會員資料</Link>
               </div>
             ) : null}

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, BellRing, CalendarClock, ChevronDown, ChevronUp, CircleOff, ClipboardList, Clock3, MapPin, PackageCheck, Pencil, RefreshCw, Save, UsersRound } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleOff, ClipboardList, Clock3, MapPin, PackageCheck, Pencil, RefreshCw, Save, UsersRound, X } from "lucide-react";
 import AdminLayout from "../components/AdminLayout";
 import FormMessage from "../components/FormMessage";
-import { cancelFlashFoodCampaign, createFlashFoodCampaign, loadAdminFlashFoodCampaigns, loadAdminFlashFoodOperatingReport, markFlashFoodCampaignReady, resendFlashFoodReadyNotification, updateFlashFoodCampaign } from "../services/flashFoodService";
+import { cancelFlashFoodCampaign, createFlashFoodCampaign, loadAdminFlashFoodCampaigns, loadAdminFlashFoodOperatingReport, notifyFlashFoodPickupLocation, resendFlashFoodReadyNotification, updateFlashFoodCampaign } from "../services/flashFoodService";
 import {
   FLASH_FOOD_SHIPPING_FEE,
   FLASH_FOOD_MEMBER_PICKUP_LOCATION,
@@ -79,13 +79,15 @@ function createEditDraft(campaign) {
   };
 }
 
-function createReadyDraft(campaign) {
-  const pickupAt = splitEditDateTime(campaign.pickup_start_at);
+function createReadyDraft(campaign, pickupLocation, notice = null) {
+  const pickupAt = splitEditDateTime(notice?.pickup_at || campaign.pickup_start_at);
   return {
     campaignId: campaign.id,
+    pickupLocation,
     year: pickupAt.year,
     day: pickupAt.monthDay,
     time: pickupAt.time,
+    customMessage: "",
   };
 }
 
@@ -111,6 +113,17 @@ function CampaignTimeSlot({ label, day, time, onDayChange, onTimeChange }) {
       </div>
     </label>
   );
+}
+
+function LocationPickupSchedule({ draft, onChange }) {
+  const [hour = "00", minute = "00"] = String(draft.time || "00:00").split(":");
+  const updateTimePart = (nextHour, nextMinute) => onChange({ time: `${nextHour}:${nextMinute}` });
+
+  return <>
+    <label className="flash-location-notice-year"><span>年份</span><select value={draft.year} aria-label="交貨年份" onChange={(event) => onChange({ year: event.target.value })}>{Array.from(new Set([String(new Date().getFullYear()), draft.year, String(new Date().getFullYear() + 1)])).sort().map((year) => <option value={year} key={year}>{year} 年</option>)}</select></label>
+    <label className="flash-location-notice-date"><span>日期</span><input value={draft.day} inputMode="numeric" pattern="\d{1,2}/\d{1,2}" placeholder="MM/DD" aria-label="交貨日期" onChange={(event) => onChange({ day: event.target.value })} required /></label>
+    <label className="flash-location-notice-time"><span>時間</span><span className="flash-time-wheel" aria-label="交貨時間 24-hour time picker"><select value={hour} aria-label="交貨時間時" onChange={(event) => updateTimePart(event.target.value, minute)}>{Array.from({ length: 24 }, (_, value) => String(value).padStart(2, "0")).map((value) => <option value={value} key={value}>{value}</option>)}</select><b aria-hidden="true">:</b><select value={minute} aria-label="交貨時間分" onChange={(event) => updateTimePart(hour, event.target.value)}>{Array.from({ length: 6 }, (_, value) => String(value * 10).padStart(2, "0")).map((value) => <option value={value} key={value}>{value}</option>)}</select></span></label>
+  </>;
 }
 
 function buildPurchaseTotals(campaign, orders) {
@@ -196,7 +209,7 @@ export default function AdminFlashFoodPage() {
   const [cancelDraft, setCancelDraft] = useState({ campaignId: "", reason: "" });
   const [editDraft, setEditDraft] = useState(null);
   const [readyDraft, setReadyDraft] = useState(null);
-  const [expandedCampaignId, setExpandedCampaignId] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [expandedPickupManifest, setExpandedPickupManifest] = useState({ campaignId: "", location: "" });
   const [activePanel, setActivePanel] = useState("manage");
   const [reportPeriod, setReportPeriod] = useState("month");
@@ -226,6 +239,11 @@ export default function AdminFlashFoodPage() {
     : activePanel === "history"
       ? campaignPanels.history
       : [];
+  const selectedCampaign = useMemo(
+    () => visibleCampaigns.find((campaign) => campaign.id === selectedCampaignId) || null,
+    [selectedCampaignId, visibleCampaigns]
+  );
+  const campaignsInView = selectedCampaign ? [selectedCampaign] : visibleCampaigns;
 
   async function refreshCampaigns() {
     setLoading(true);
@@ -264,6 +282,15 @@ export default function AdminFlashFoodPage() {
   useEffect(() => {
     if (activePanel === "report") refreshOperatingReport();
   }, [activePanel, reportPeriod]);
+
+  useEffect(() => {
+    if (!selectedCampaignId || selectedCampaign) return;
+    setSelectedCampaignId("");
+    setExpandedPickupManifest({ campaignId: "", location: "" });
+    setEditDraft(null);
+    setReadyDraft(null);
+    setCancelDraft({ campaignId: "", reason: "" });
+  }, [selectedCampaign, selectedCampaignId]);
 
   function updateField(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -373,7 +400,7 @@ export default function AdminFlashFoodPage() {
 
   async function handleReadyNotification(event) {
     event.preventDefault();
-    if (!readyDraft) return;
+    if (!readyDraft?.pickupLocation) return;
     const pickupReadyAt = toCampaignDateTime(readyDraft.year, readyDraft.day, readyDraft.time);
     if (!pickupReadyAt) {
       setMessage({ text: "請填入正確的實際取餐時間。", type: "error" });
@@ -381,14 +408,15 @@ export default function AdminFlashFoodPage() {
     }
 
     setSaving(true);
-    const { error, notificationError } = await markFlashFoodCampaignReady(readyDraft.campaignId, pickupReadyAt);
+    const { error, notificationError } = await notifyFlashFoodPickupLocation(readyDraft.campaignId, readyDraft.pickupLocation, pickupReadyAt, readyDraft.customMessage);
     setSaving(false);
     if (error) {
-      setMessage({ text: error.message || "取餐通知發送失敗。", type: "error" });
+      const isMissingPickupNoticeFunction = error.code === "PGRST202" || /admin_queue_flash_food_pickup_location_notification/i.test(error.message || "");
+      setMessage({ text: isMissingPickupNoticeFunction ? "取餐通知資料庫功能尚未更新，請先套用最新 migration。" : (error.message || "取餐通知發送失敗。"), type: "error" });
       return;
     }
     setReadyDraft(null);
-    setMessage({ text: notificationError ? "已更新實際取餐時間；LINE 通知部分發送失敗，已保留在通知佇列。" : "已通知本團已送出點餐的會員前來取餐。", type: "success" });
+    setMessage({ text: notificationError ? `已更新${readyDraft.pickupLocation}交貨時間；LINE 通知部分發送失敗，已保留在通知佇列。` : `已通知${readyDraft.pickupLocation}的下單會員前來取餐。`, type: "success" });
     await refreshCampaigns();
   }
 
@@ -401,6 +429,19 @@ export default function AdminFlashFoodPage() {
       return;
     }
     setMessage({ text: notificationError ? "通知已重新排入佇列，但部分發送失敗。" : "已重新通知本團會員。", type: "success" });
+  }
+
+  function returnToCampaignList() {
+    setSelectedCampaignId("");
+    setExpandedPickupManifest({ campaignId: "", location: "" });
+    setEditDraft(null);
+    setReadyDraft(null);
+    setCancelDraft({ campaignId: "", reason: "" });
+  }
+
+  function changeActivePanel(panel) {
+    setActivePanel(panel);
+    returnToCampaignList();
   }
 
   return (
@@ -419,19 +460,19 @@ export default function AdminFlashFoodPage() {
         </div>
 
         <div className="flash-admin-tabs" role="tablist" aria-label="快閃熱食工作區">
-          <button type="button" role="tab" aria-selected={activePanel === "report"} className={activePanel === "report" ? "active" : ""} onClick={() => setActivePanel("report")}>
+          <button type="button" role="tab" aria-selected={activePanel === "report"} className={activePanel === "report" ? "active" : ""} onClick={() => changeActivePanel("report")}>
             <span>營運報表</span><small>◎</small>
           </button>
-          <button type="button" role="tab" aria-selected={activePanel === "manage"} className={activePanel === "manage" ? "active" : ""} onClick={() => setActivePanel("manage")}>
+          <button type="button" role="tab" aria-selected={activePanel === "manage"} className={activePanel === "manage" ? "active" : ""} onClick={() => changeActivePanel("manage")}>
             <span>管理中</span><small>{campaignPanels.current.length}</small>
           </button>
-          <button type="button" role="tab" aria-selected={activePanel === "create"} className={activePanel === "create" ? "active" : ""} onClick={() => setActivePanel("create")}>
+          <button type="button" role="tab" aria-selected={activePanel === "create"} className={activePanel === "create" ? "active" : ""} onClick={() => changeActivePanel("create")}>
             <span>開新團</span><small>＋</small>
           </button>
-          <button type="button" role="tab" aria-selected={activePanel === "menu"} className={activePanel === "menu" ? "active" : ""} onClick={() => setActivePanel("menu")}>
+          <button type="button" role="tab" aria-selected={activePanel === "menu"} className={activePanel === "menu" ? "active" : ""} onClick={() => changeActivePanel("menu")}>
             <span>菜單品項</span><small>{selectedCount}</small>
           </button>
-          <button type="button" role="tab" aria-selected={activePanel === "history"} className={activePanel === "history" ? "active" : ""} onClick={() => setActivePanel("history")}>
+          <button type="button" role="tab" aria-selected={activePanel === "history"} className={activePanel === "history" ? "active" : ""} onClick={() => changeActivePanel("history")}>
             <span>歷史紀錄</span><small>{campaignPanels.history.length}</small>
           </button>
         </div>
@@ -513,23 +554,40 @@ export default function AdminFlashFoodPage() {
         {activePanel === "report" ? <FlashFoodOperatingReport report={operatingReport} period={reportPeriod} loading={reportLoading} message={reportMessage} onPeriodChange={setReportPeriod} onRefresh={refreshOperatingReport} /> : null}
 
         {["manage", "history"].includes(activePanel) ? <section className="flash-admin-list-panel">
-          <div className="admin-section-heading">
+          {selectedCampaign ? <>
+            <button type="button" className="flash-campaign-back-button" onClick={returnToCampaignList}>
+              <ChevronLeft size={17} aria-hidden="true" />返回活動清單
+            </button>
+            <div className="flash-campaign-workspace-head">
+              <div>
+                <span>{getFlashFoodCampaignStateLabel(getFlashFoodCampaignState(selectedCampaign))}</span>
+                <h2>{selectedCampaign.title}</h2>
+                <p><Clock3 size={15} aria-hidden="true" />點餐：{formatFlashFoodDateTime(selectedCampaign.open_at)} 至 {formatFlashFoodDateTime(selectedCampaign.deadline_at)}</p>
+                <p><MapPin size={15} aria-hidden="true" />預估取餐：{formatFlashFoodDateTime(selectedCampaign.pickup_start_at)}</p>
+              </div>
+            </div>
+          </> : <div className="admin-section-heading">
             <div>
               <span>CAMPAIGN STATUS</span>
               <h2>{activePanel === "manage" ? "進行中活動" : "歷史活動"}</h2>
             </div>
             <span className="flash-panel-count">{visibleCampaigns.length} 筆</span>
           </div>
+          }
           {loading ? <p className="admin-loading-state">正在讀取活動…</p> : null}
           {!loading && !visibleCampaigns.length ? <p className="admin-empty-text">{activePanel === "manage" ? "目前沒有進行中的快閃活動。可從「開新團」建立活動。" : "目前沒有可查閱的歷史快閃活動。"}</p> : null}
-          <div className="flash-admin-campaign-list">
-            {visibleCampaigns.map((campaign) => {
+          <div className={`flash-admin-campaign-list${selectedCampaign ? " is-managing" : ""}`}>
+            {campaignsInView.map((campaign) => {
               const state = getFlashFoodCampaignState(campaign);
               const orders = campaign.flash_food_orders || [];
               const activeOrders = orders.filter((order) => order.status === "submitted");
               const purchaseTotals = buildPurchaseTotals(campaign, activeOrders);
               const pickupGroups = buildPickupGroups(activeOrders);
-              const isCampaignExpanded = expandedCampaignId === campaign.id;
+              const pickupNoticesByLocation = new Map((campaign.flash_food_pickup_notices || []).map((notice) => [notice.pickup_location, notice]));
+              const activePickupLocation = readyDraft?.campaignId === campaign.id ? readyDraft.pickupLocation : "";
+              const activePickupGroup = pickupGroups.find((group) => group.location === activePickupLocation) || null;
+              const activePickupMemberCount = new Set((activePickupGroup?.orders || []).map((order) => order.user_id)).size;
+              const isCampaignExpanded = selectedCampaignId === campaign.id;
               const selectedPickupGroup = expandedPickupManifest.campaignId === campaign.id
                 ? pickupGroups.find((group) => group.location === expandedPickupManifest.location)
                 : null;
@@ -539,33 +597,21 @@ export default function AdminFlashFoodPage() {
               }));
               return (
                 <article className={`flash-admin-campaign-card${isCampaignExpanded ? " is-expanded" : ""}`} key={campaign.id}>
-                  <div className="flash-admin-campaign-topline">
-                    <span className={`flash-state-badge ${state}`}>{getFlashFoodCampaignStateLabel(state)}</span>
-                    <span>{formatFlashFoodDateTime(campaign.deadline_at)} 截止</span>
-                  </div>
-                  <h3>{campaign.title}</h3>
-                  <div className="flash-admin-campaign-times">
-                    <span><Clock3 size={15} aria-hidden="true" /> 點餐：{formatFlashFoodDateTime(campaign.open_at)} 至 {formatFlashFoodDateTime(campaign.deadline_at)}</span>
-                    <span><MapPin size={15} aria-hidden="true" /> 預估取餐：{formatFlashFoodDateTime(campaign.pickup_start_at)}</span>
-                  </div>
-                  <button
+                  {!isCampaignExpanded ? <button
                     type="button"
-                    className="flash-admin-campaign-toggle"
-                    aria-expanded={isCampaignExpanded}
+                    className="flash-admin-campaign-row"
                     onClick={() => {
-                      setExpandedCampaignId((current) => current === campaign.id ? "" : campaign.id);
-                      if (isCampaignExpanded) setExpandedPickupManifest({ campaignId: "", location: "" });
+                      setSelectedCampaignId(campaign.id);
+                      setExpandedPickupManifest({ campaignId: "", location: "" });
                     }}
                   >
-                    <span>{isCampaignExpanded ? "收合詳細資料" : "查看詳細資料"}</span>
-                    {isCampaignExpanded ? <ChevronUp size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
-                  </button>
+                    <span className={`flash-state-badge ${state}`}>{getFlashFoodCampaignStateLabel(state)}</span>
+                    <h3>{campaign.title}</h3>
+                    <span>{formatFlashFoodDateTime(campaign.deadline_at)} 截止</span>
+                    <ChevronRight size={19} aria-hidden="true" />
+                  </button> : null}
                   {isCampaignExpanded ? <div className="flash-admin-campaign-detail">
                   {campaign.note ? <p className="flash-admin-campaign-note">{campaign.note}</p> : null}
-                  <div className="flash-admin-campaign-summary">
-                    <span><UsersRound size={15} aria-hidden="true" /> {activeOrders.length} 筆點餐</span>
-                    <strong>預估 ${formatCurrency(activeOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0))}</strong>
-                  </div>
                   {campaign.pickup_ready_at ? <p className="flash-ready-time"><BellRing size={15} aria-hidden="true" /> 已通知取餐：{formatFlashFoodDateTime(campaign.pickup_ready_at)}</p> : null}
                   {activeOrders.length ? <div className="flash-pickup-counts" aria-label="交貨地點點餐人數">{pickupCounts.map(({ location, count }) => <span key={location}>{location} <b>{count}</b></span>)}</div> : null}
                   {state === "open" && activeOrders.length ? (
@@ -582,22 +628,58 @@ export default function AdminFlashFoodPage() {
                       </div>
                     </details>
                   ) : null}
-                  {state !== "open" && purchaseTotals.length ? (
+                  {state !== "open" && (purchaseTotals.length || (state === "locked" && activeOrders.length)) ? (
+                    <section className="flash-fulfillment-workbench" aria-label="截止後採買與交貨作業">
+                    {purchaseTotals.length ? (
                     <section className="flash-purchase-summary" aria-label="截止後採買統計">
                       <div className="flash-ops-heading"><span><ClipboardList size={16} aria-hidden="true" /> 截止後採買統計</span><small>{activeOrders.length} 筆已送出訂單</small></div>
-                      <ul>{purchaseTotals.map((item) => <li key={`${item.productName}-${item.itemNote}`}><span>{item.productName}{item.itemNote ? <small>・{item.itemNote}</small> : null}</span><strong>× {item.quantity}</strong></li>)}</ul>
+                      <ul>{purchaseTotals.map((item) => <li key={`${item.productName}-${item.itemNote}`}>
+                        <span className="flash-purchase-item-copy">
+                          <strong>{item.productName}</strong>
+                          {item.itemNote ? <small>{item.itemNote}</small> : null}
+                        </span>
+                        <b aria-label={`採買 ${item.quantity} 份`}>× {item.quantity}</b>
+                      </li>)}</ul>
                     </section>
-                  ) : null}
-                  {state !== "open" && state !== "cancelled" && state !== "ready" && activeOrders.length ? (
-                    readyDraft?.campaignId === campaign.id ? (
-                      <form className="flash-ready-notice-form" onSubmit={handleReadyNotification} noValidate>
-                        <strong>採買完成，通知取餐</strong>
-                        <p>只會通知本團已送出點餐的 {activeOrders.length} 位會員，訊息會帶入各自選擇的交貨地點。</p>
-                        <label><span>年份</span><select value={readyDraft.year} onChange={(event) => setReadyDraft((current) => ({ ...current, year: event.target.value }))}>{Array.from(new Set([String(new Date().getFullYear()), readyDraft.year, String(new Date().getFullYear() + 1)])).sort().map((year) => <option value={year} key={year}>{year} 年</option>)}</select></label>
-                        <div className="flash-schedule-editor flash-schedule-editor-single"><CampaignTimeSlot label="實際取餐" day={readyDraft.day} time={readyDraft.time} onDayChange={(value) => setReadyDraft((current) => ({ ...current, day: value }))} onTimeChange={(value) => setReadyDraft((current) => ({ ...current, time: value }))} /></div>
-                        <div className="flash-ready-notice-actions"><button type="submit" className="admin-primary-button" disabled={saving}><BellRing size={15} aria-hidden="true" /> 通知本團會員</button><button type="button" className="admin-secondary-button" onClick={() => setReadyDraft(null)}>返回</button></div>
-                      </form>
-                    ) : <div className="flash-purchase-actions"><button type="button" className="flash-ready-button" onClick={() => { setEditDraft(null); setCancelDraft({ campaignId: "", reason: "" }); setReadyDraft(createReadyDraft(campaign)); }} disabled={saving}><BellRing size={15} aria-hidden="true" /> 採買完成／通知取餐</button></div>
+                    ) : null}
+                  {state === "locked" && activeOrders.length ? <section className="flash-location-handoff" aria-label="依交貨地點通知取餐">
+                    <div className="flash-ops-heading"><span><MapPin size={16} aria-hidden="true" /> 依交貨地點通知取餐</span><small>選擇一處地點後，確認名單、設定時間再發送。</small></div>
+                    <div className="flash-location-handoff-body">
+                      <div className="flash-location-handoff-list" aria-label="交貨地點選擇">
+                        {pickupGroups.map(({ location, orders: locationOrders }) => {
+                          const notice = pickupNoticesByLocation.get(location);
+                          const memberCount = new Set(locationOrders.map((order) => order.user_id)).size;
+                          const isSelected = activePickupLocation === location;
+                          return <button key={location} type="button" className={`flash-location-handoff-card${isSelected ? " selected" : ""}${notice ? " notified" : ""}`} disabled={!locationOrders.length} onClick={() => {
+                            setEditDraft(null);
+                            setCancelDraft({ campaignId: "", reason: "" });
+                            setReadyDraft(createReadyDraft(campaign, location, notice));
+                          }}>
+                            <span>交貨地點</span><strong>{location}</strong><small>{locationOrders.length ? `${locationOrders.length} 筆訂單 · ${memberCount} 位會員` : "尚無下單會員"}</small>
+                            {notice ? <em>已通知</em> : null}
+                          </button>;
+                        })}
+                      </div>
+                      <aside className="flash-location-handoff-panel">
+                        {activePickupGroup && readyDraft ? <form className="flash-location-notice-form" onSubmit={handleReadyNotification} noValidate>
+                          <section className="flash-location-order-list" aria-label={`${activePickupGroup.location}下單名單`}>
+                            <div><strong>訂單資料</strong><small>{activePickupGroup.orders.length} 筆訂單 · {activePickupMemberCount} 位會員</small></div>
+                            <ul>{activePickupGroup.orders.map((order) => <li key={order.id}>
+                              <div className="flash-location-order-person"><span>姓名</span><strong>{order.customer_name || "未填姓名"}</strong></div>
+                              <div className="flash-location-order-phone"><span>電話</span><strong>{order.phone || "未填電話"}</strong></div>
+                              <div className="flash-location-order-items"><span>餐點</span><strong>{(order.flash_food_order_items || []).map((item) => `${item.product_name} × ${item.quantity}`).join("、")}</strong></div>
+                            </li>)}</ul>
+                            <label className="flash-location-message"><span>群發訊息（選填）</span><textarea value={readyDraft.customMessage} maxLength={300} placeholder="例如：抵達前請留意官方 LINE 通知。" onChange={(event) => setReadyDraft((current) => ({ ...current, customMessage: event.target.value }))} /><small>會隨本次取餐通知傳送給此地點下單者。</small></label>
+                          </section>
+                          <div className="flash-location-notice-footer">
+                            <LocationPickupSchedule draft={readyDraft} onChange={(changes) => setReadyDraft((current) => ({ ...current, ...changes }))} />
+                            <div className="flash-location-notice-actions"><button type="submit" className="admin-primary-button" disabled={saving} aria-label={pickupNoticesByLocation.get(activePickupGroup.location) ? `重新通知 ${activePickupMemberCount} 位會員` : `通知 ${activePickupMemberCount} 位會員`} title={pickupNoticesByLocation.get(activePickupGroup.location) ? `重新通知 ${activePickupMemberCount} 位會員` : `通知 ${activePickupMemberCount} 位會員`}><BellRing size={16} aria-hidden="true" /></button><button type="button" className="admin-secondary-button" onClick={() => setReadyDraft(null)} aria-label="取消交貨通知設定" title="取消交貨通知設定"><X size={16} aria-hidden="true" /></button></div>
+                          </div>
+                        </form> : <div className="flash-location-handoff-empty"><MapPin size={19} aria-hidden="true" /><span>請先選擇一個交貨地點，即可查看該處下單者資料並設定交貨時間。</span></div>}
+                      </aside>
+                    </div>
+                  </section> : null}
+                    </section>
                   ) : null}
                   {state === "ready" && activeOrders.length ? (
                     <section className="flash-pickup-manifest" aria-label="依交貨地點整理的交貨清單">

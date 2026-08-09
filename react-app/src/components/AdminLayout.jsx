@@ -7,8 +7,8 @@ const navItems = [
   { to: "/admin", label: "訂單管理", icon: LayoutDashboard, end: true },
   { to: "/admin/reports", label: "營運報表", icon: BarChart3 },
   { to: "/admin/products", label: "熱門商品", icon: Package },
-  { to: "/admin/flash-food", label: "快閃熱食", icon: UtensilsCrossed },
   { to: "/admin/settings", label: "營業設定", icon: Clock3 },
+  { to: "/admin/flash-food", label: "快閃熱食", icon: UtensilsCrossed },
   { to: "/order", label: "返回前台", icon: Store },
 ];
 

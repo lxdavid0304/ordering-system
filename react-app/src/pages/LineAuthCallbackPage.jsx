@@ -4,6 +4,7 @@ import { configOk } from "../lib/config";
 import { memberSupabase } from "../lib/supabase";
 import { hasCompletedMemberProfile, loadMemberProfile } from "../services/profileService";
 import { ensureLineMemberBinding } from "../services/lineService";
+import { isLineMemberSession } from "../services/authService";
 
 function readOAuthError() {
   const search = new URLSearchParams(window.location.search);
@@ -42,6 +43,12 @@ export default function LineAuthCallbackPage() {
         if (!active || !session) {
           return;
         }
+        if (!isLineMemberSession(session)) {
+          setMessage("偵測到舊登入狀態，正在重新以 LINE 驗證…");
+          await memberSupabase.auth.signOut({ scope: "local" });
+          if (active) navigate("/line-member", { replace: true });
+          return;
+        }
         setMessage("LINE 登入完成，正在確認會員資料...");
 
         const bindingResult = await ensureLineMemberBinding();
@@ -49,7 +56,8 @@ export default function LineAuthCallbackPage() {
           return;
         }
         if (bindingResult.error) {
-          setError("LINE 會員綁定失敗，請確認使用的 LINE 帳號後再試一次。");
+          const detail = String(bindingResult.error.code || bindingResult.error.message || "UNKNOWN_ERROR");
+          setError(`LINE 會員綁定失敗（${detail}）。`);
           return;
         }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { configOk } from "../lib/config";
 import { memberSupabase } from "../lib/supabase";
-import { getLineLoginErrorText, loginMemberWithLine } from "../services/authService";
+import { getLineLoginErrorText, isLineMemberSession, loginMemberWithLine } from "../services/authService";
 
 export default function LineMemberPage() {
   const [message, setMessage] = useState("正在確認 LINE 會員登入…");
@@ -21,9 +21,14 @@ export default function LineMemberPage() {
         setError("無法確認登入狀態，請稍後再試。");
         return;
       }
-      if (data.session) {
+      if (data.session && isLineMemberSession(data.session)) {
         window.location.replace(`${window.location.origin}/auth/callback`);
         return;
+      }
+      if (data.session) {
+        setMessage("偵測到舊登入狀態，正在重新以 LINE 驗證…");
+        await memberSupabase.auth.signOut({ scope: "local" });
+        if (!active) return;
       }
       setMessage("正在前往 LINE 登入…");
       const result = await loginMemberWithLine(`${window.location.origin}/auth/callback`);

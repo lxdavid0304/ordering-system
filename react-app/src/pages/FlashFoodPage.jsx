@@ -336,7 +336,7 @@ export default function FlashFoodPage() {
   }
 
   return (
-    <MemberLayout title="快閃熱食" subtitle="想吃就選，當天統一採買；顯示餐點價格均已含運費。" active="flash-food" pageClassName="flash-food-page">
+    <MemberLayout title="快閃熱食" active="flash-food" pageClassName="flash-food-page">
       <section className="flash-food-hero">
         <div>
           <span>FLASH FOOD COURT</span>
