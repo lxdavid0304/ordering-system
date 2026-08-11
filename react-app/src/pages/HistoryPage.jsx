@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, ChevronRight, CircleCheckBig, MapPin, Package, ReceiptText, RotateCcw, RotateCw, Search } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, CircleCheckBig, MapPin, Package, ReceiptText, RotateCcw, RotateCw, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import FormMessage from "../components/FormMessage";
 import HistoryOrderDetailDrawer from "../components/HistoryOrderDetailDrawer";
@@ -12,6 +12,7 @@ import { getMemberOrderStatusLabel } from "../utils/orders";
 import { saveReorderPayload } from "../utils/storage";
 
 const PAGE_SIZE = 12;
+const MOBILE_PAGE_SIZE = 10;
 const periodOptions = [
   { value: "3", label: "近 3 個月" },
   { value: "6", label: "近 6 個月" },
@@ -83,7 +84,7 @@ function HistoryOrderCard({
       </div>
 
       <div
-        className={`history-order-preview${previewItems.length === 1 ? " single-product" : ""}`}
+        className={`history-order-preview history-desktop-order-preview${previewItems.length === 1 ? " single-product" : ""}`}
         aria-label="商品摘要"
       >
         {previewItems.map((item, index) => (
@@ -95,6 +96,15 @@ function HistoryOrderCard({
         {remainingItems ? (
           <div className="history-preview-more">另有 {remainingItems} 項商品，請查看明細</div>
         ) : null}
+      </div>
+
+      <div className="history-mobile-order-preview" aria-label="完整商品摘要">
+        {items.map((item, index) => (
+          <div className="history-preview-item" key={`${order.id}-mobile-preview-${index}`}>
+            <strong>{item.product_name}</strong>
+            <span>× {Math.max(1, Number(item.quantity) || 1)}</span>
+          </div>
+        ))}
       </div>
 
       <div className="history-order-summary">
@@ -128,6 +138,11 @@ function HistoryOrderCard({
           <RotateCcw size={14} aria-hidden="true" />
           挑選回購
         </button>
+        <button type="button" className="ghost history-mobile-order-action" onClick={onStartSelecting}>
+          <RotateCcw size={14} aria-hidden="true" />
+          查看明細／挑選回購
+          <ChevronRight size={15} aria-hidden="true" />
+        </button>
       </div>
 
     </article>
@@ -144,6 +159,10 @@ export default function HistoryPage() {
   const [searchText, setSearchText] = useState("");
   const [period, setPeriod] = useState("6");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [mobilePage, setMobilePage] = useState(1);
+  const [isMobileLayout, setIsMobileLayout] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+  );
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [selectionByOrder, setSelectionByOrder] = useState({});
 
@@ -175,7 +194,16 @@ export default function HistoryPage() {
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
+    setMobilePage(1);
   }, [period, searchText]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const updateLayout = () => setIsMobileLayout(media.matches);
+    updateLayout();
+    media.addEventListener("change", updateLayout);
+    return () => media.removeEventListener("change", updateLayout);
+  }, []);
 
   const recordOrders = useMemo(
     () => orders.filter((order) => order.status === "fulfilled" || order.status === "archived"),
@@ -212,7 +240,11 @@ export default function HistoryPage() {
     });
   }, [periodOrders, searchText]);
 
-  const visibleOrders = filteredOrders.slice(0, visibleCount);
+  const mobilePageCount = Math.max(1, Math.ceil(filteredOrders.length / MOBILE_PAGE_SIZE));
+  const currentMobilePage = Math.min(mobilePage, mobilePageCount);
+  const visibleOrders = isMobileLayout
+    ? filteredOrders.slice((currentMobilePage - 1) * MOBILE_PAGE_SIZE, currentMobilePage * MOBILE_PAGE_SIZE)
+    : filteredOrders.slice(0, visibleCount);
   const selectedOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId) || null,
     [orders, selectedOrderId]
@@ -335,6 +367,16 @@ export default function HistoryPage() {
                 <span><strong>{archivedCount}</strong><small>已封存</small></span>
               </div>
             </div>
+            <label className="history-mobile-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                value={searchText}
+                aria-label="搜尋訂單紀錄"
+                placeholder="搜尋"
+                onChange={(event) => setSearchText(event.target.value)}
+              />
+            </label>
             <button
               type="button"
               className="ghost history-refresh-btn"
@@ -413,7 +455,7 @@ export default function HistoryPage() {
           </div>
         ) : null}
 
-        {visibleCount < filteredOrders.length ? (
+        {!isMobileLayout && visibleCount < filteredOrders.length ? (
           <div className="history-load-more">
             <span>
               已顯示 {visibleOrders.length} / {filteredOrders.length} 筆
@@ -422,6 +464,30 @@ export default function HistoryPage() {
               顯示更多
             </button>
           </div>
+        ) : null}
+
+        {isMobileLayout && filteredOrders.length > MOBILE_PAGE_SIZE ? (
+          <nav className="history-mobile-pagination" aria-label="歷史訂單分頁">
+            <button
+              type="button"
+              className="ghost"
+              disabled={currentMobilePage <= 1}
+              onClick={() => setMobilePage((page) => Math.max(1, page - 1))}
+            >
+              <ChevronLeft size={16} aria-hidden="true" />
+              上一頁
+            </button>
+            <span>第 {currentMobilePage} / {mobilePageCount} 頁</span>
+            <button
+              type="button"
+              className="ghost"
+              disabled={currentMobilePage >= mobilePageCount}
+              onClick={() => setMobilePage((page) => Math.min(mobilePageCount, page + 1))}
+            >
+              下一頁
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
+          </nav>
         ) : null}
       </section>
 

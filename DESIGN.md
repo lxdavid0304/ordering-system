@@ -17,6 +17,7 @@ RLS 是資料存取的最後防線；前端路由保護只負責體驗，不能�
 - `761px` 以上使用桌面工作流：首頁保留三步驟引導、熱門商品與訂單工作區的既有配置。
 - `760px` 以下使用手機工作流：熱門商品、小型交貨點選擇器、緊湊商品列與固定訂單摘要依序排列；會員功能收合在側邊選單。
 - 手機版樣式必須以 media query 隔離，不得覆寫桌面版的引導步驟、欄位配置或管理介面。
+- 快閃熱食手機後台的截止後作業採摘要優先：採買清單與各地點名單不預設展開；管理者先選地點，再選擇查看／收合名單或設定／收合通知。桌面版維持完整名單與通知編輯器並排。
 
 ## 前端路由
 
@@ -73,17 +74,20 @@ RLS 是資料存取的最後防線；前端路由保護只負責體驗，不能�
 ## LINE 通知設計
 
 ```text
-訂金／採買進行中狀態更新
-  -> PostgreSQL trigger 寫入 line_notification_jobs 快照
-  -> 後台呼叫 line-notify 並指定 target_status
-  -> 工作者略過過時的 pending/failed/processing job
+訂金確認
+  -> 後台明確建立 deposit_confirmed 通知快照
+  -> line-notify 立即投遞，重複儲存不重複發送
+
+採購金額異動
+  -> 加入待交貨清單時只保存原報價與實際總額，不發訊息
+  -> 管理者以手機版「補傳金額更正通知」明確建立 price_adjusted 快照
   -> claim job
   -> 驗證綁定與通知偏好
   -> LINE Messaging API push
   -> sent / failed / skipped，必要時依 backoff 重試
 ```
 
-`ready_pickup` 不走上述狀態通知。交貨通知改為：管理者選擇地點與時間 → 只挑選該地點 `ready_pickup` 訂單 → 依會員去重 → 建立交貨批次與通知 job → `line-notify` 送出。通知使用 `payload.to_status` 或交貨批次快照，不讀取後續可能已變動的訂單狀態。管理者明確要求最新狀態時，舊的可處理通知會標記為 `skipped`，以避免舊 job 阻擋即時通知。
+`ready_pickup` 不走上述狀態通知。交貨通知改為：管理者選擇地點與時間 → 只挑選該地點 `ready_pickup` 訂單 → 依會員去重 → 建立交貨批次與通知 job → `line-notify` 送出。交貨 job 保存該會員本次訂單總額、訂金與待收尾款快照；同會員有多筆待取貨訂單時會合計各金額。只要其中有價格異動，交貨通知就依序顯示調整後總額、訂金與尾款。舊的自動狀態 job 在部署時標記為 `skipped`，避免舊金額或重複通知送出。
 
 快閃熱食使用獨立的 `flash_food_notification_jobs` 與 `flash-food-notify`。活動到 `open_at` 後才排入開團通知；截止後管理者先看商品彙總，再按四個交貨地點各自核對訂單、設定時間與選填訊息。每次地點通知以活動、地點與會員去重。
 
@@ -91,10 +95,10 @@ RLS 是資料存取的最後防線；前端路由保護只負責體驗，不能�
 
 | Function | 呼叫者 | 責任 |
 | --- | --- | --- |
-| `create-order` | 會員前端 | 驗證與原子建立訂單，建立初始通知 job |
+| `create-order` | 會員前端 | 驗證與原子建立訂單；不建立會員通知 job |
 | `lookup-order` | 會員前端 | 安全查詢目前會員的訂單 |
 | `line-webhook` | LINE 平台 | 驗證簽章、處理 follow/unfollow 與連結碼 |
-| `line-notify` | 管理者前端或受信任工作者 | 寫入缺漏 job、處理佇列、投遞 LINE push |
+| `line-notify` | 管理者前端或受信任工作者 | 建立訂金確認／金額更正 job，或建立交貨批次 job；只投遞這三種明確事件 |
 | `flash-food-notify` | 管理者前端或排程工作者 | 處理快閃熱食開團、點餐與依地點取餐通知 |
 | `notification-diagnostics` | 管理者前端 | 查詢單筆訂單 job、佇列與必要診斷資訊 |
 
@@ -102,4 +106,4 @@ RLS 是資料存取的最後防線；前端路由保護只負責體驗，不能�
 
 `supabase/migrations/` 是雲端資料庫的唯一增量變更來源。每支 migration 必須可安全重跑，並使用 `if exists`、`if not exists` 或明確的替換語意。已部署 migration 不得修改；修正要以新 migration 交付。若因緊急情況在 SQL Editor 手動套用，必須先驗證物件、在同一變更窗口補登 `supabase_migrations.schema_migrations`，並再次比對本機版本。
 
-`sql/schema.sql` 保持與累積 migration 對齊，供全新資料庫或結構審查使用。既有資料庫只能套用未執行的 migration。
+`supabase/migrations/` 是唯一可用於建立與演進資料庫的來源；不保留可變的 `schema.sql` 快照，以免快照漏掉新 migration 而建立不完整的新環境。既有資料庫只能套用未執行的 migration。

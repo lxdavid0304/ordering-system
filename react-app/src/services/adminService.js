@@ -36,10 +36,18 @@ function normalizeOrderResult(data) {
   return data && typeof data === "object" ? data : null;
 }
 
-async function sendLineNotification(orderId, status = "") {
+async function requestLineNotification(orderId, notificationType = "") {
   const result = await adminSupabase.functions.invoke("line-notify", {
-    body: { order_id: orderId, target_status: status || undefined },
+    body: {
+      order_id: orderId,
+      notification_type: notificationType || undefined,
+    },
   });
+  return result;
+}
+
+async function sendLineNotification(orderId, notificationType = "") {
+  const result = await requestLineNotification(orderId, notificationType);
   if (result.error) return result.error;
   if (Number(result.data?.failed || 0) > 0) {
     return new Error("LINE notification delivery failed and will retry automatically");
@@ -128,11 +136,6 @@ export async function updateAdminOrder(orderId, payload, reason = "") {
   });
 
   const order = normalizeOrderResult(result.data);
-  if (!result.error && payload.status && payload.status !== "ready_pickup" && order?.status === payload.status) {
-    const notificationError = await sendLineNotification(orderId, payload.status);
-    return { ...result, data: order, notificationError };
-  }
-
   return { ...result, data: order || result.data };
 }
 
@@ -151,6 +154,11 @@ export async function markAdminOrderReadyForPickup(orderId, finalTotalAmount, re
 
   const order = normalizeOrderResult(result.data);
   return { ...result, data: order || result.data, notificationError: null };
+}
+
+export async function sendPriceAdjustmentNotification(orderId) {
+  if (!adminSupabase) return missingClient();
+  return requestLineNotification(orderId, "price_adjusted");
 }
 
 export async function saveAdminOrderPayment(orderId, payment) {
@@ -181,8 +189,12 @@ export async function saveAdminOrderPayment(orderId, payment) {
       };
     }
 
-    const notificationError = await sendLineNotification(orderId, order.status);
-    return { ...result, data: order, notificationError };
+    if (payment.phase === "deposit" && order.status === "open") {
+      const notificationError = await sendLineNotification(orderId, "deposit_confirmed");
+      return { ...result, data: order, notificationError };
+    }
+
+    return { ...result, data: order, notificationError: null };
   }
 
   return { ...result, data: order || result.data };

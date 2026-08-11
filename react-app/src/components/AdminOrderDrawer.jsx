@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Check, ChevronRight, Clock3, CreditCard, Package, ReceiptText, Save, Trash2, UserRound, X } from "lucide-react";
+import { Bell, Check, ChevronRight, Clock3, CreditCard, MapPin, Package, Phone, ReceiptText, Save, Trash2, UserRound, X } from "lucide-react";
 import {
   loadOrderEvents,
   loadOrderNotificationJobs,
   markAdminOrderReadyForPickup,
   saveAdminOrderPayment,
+  sendPriceAdjustmentNotification,
   updateAdminOrder,
 } from "../services/adminService";
 import {
@@ -85,6 +86,9 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
   const [finalTotalAmount, setFinalTotalAmount] = useState(order.total_amount || 0);
   const [priceAdjustmentReason, setPriceAdjustmentReason] = useState("現場價格異動");
   const [message, setMessage] = useState({ text: "", type: "" });
+  const [workflowOpen, setWorkflowOpen] = useState(() => (
+    typeof window === "undefined" ? true : window.innerWidth > 767
+  ));
 
   const totalAmount = Math.max(0, Number(currentOrder.total_amount) || 0);
   const depositDue = getDepositDue(totalAmount);
@@ -104,6 +108,15 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
     : adminWorkflowStatusOrder;
   const nextStatus = getNextAdminStatus(currentOrder.status);
   const canCompleteWithoutPayment = currentOrder.status === "ready_pickup" && outstandingAmount === 0;
+  const hasPriceAdjustment = currentOrder.quoted_total_amount != null
+    && Number(currentOrder.quoted_total_amount) !== totalAmount;
+  const paymentGuidance = currentOrder.status === "pending_deposit"
+    ? "確認訂金後，訂單會自動進入採買流程。"
+    : currentOrder.status === "open"
+      ? "商品採買完成後，確認實際總額並安排交貨。"
+      : currentOrder.status === "ready_pickup"
+        ? "確認尾款後，即可完成這筆訂單。"
+        : "款項與訂單流程皆已完成。";
 
   const itemQuantity = useMemo(
     () =>
@@ -145,6 +158,14 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
   useEffect(() => {
     refreshEvents();
   }, [order.id]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const syncWorkflowVisibility = () => setWorkflowOpen(!media.matches);
+    syncWorkflowVisibility();
+    media.addEventListener("change", syncWorkflowVisibility);
+    return () => media.removeEventListener("change", syncWorkflowVisibility);
+  }, []);
 
   async function completeUpdate(data, successText, notificationError = null, completionError = null) {
     const nextOrder = {
@@ -259,6 +280,23 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
     );
   }
 
+  async function handlePriceAdjustmentNotification() {
+    setBusy("price-adjustment-notification");
+    const { data, error } = await sendPriceAdjustmentNotification(order.id);
+    setBusy("");
+    if (error) {
+      setMessage({ text: `金額更正通知未送出：${getErrorMessage(error)}`, type: "error" });
+      return;
+    }
+    await refreshEvents();
+    setMessage({
+      text: data?.already_notified
+        ? "這個金額版本的更正通知已送出，不會重複傳送。"
+        : "已補傳金額更正通知給下單者。",
+      type: "success",
+    });
+  }
+
   return (
     <div className="admin-drawer-layer" role="presentation">
       <button type="button" className="admin-drawer-backdrop" aria-label="關閉訂單明細" onClick={onClose} />
@@ -284,18 +322,18 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
             </span>
           </div>
 
-          <section className="admin-drawer-section">
+          <section className="admin-drawer-section admin-customer-section">
             <h3><UserRound size={17} />顧客與配送</h3>
             <dl className="admin-detail-grid">
-              <div><dt>姓名</dt><dd>{currentOrder.customer_name}</dd></div>
-              <div><dt>電話</dt><dd>{currentOrder.phone}</dd></div>
-              <div><dt>交貨地點</dt><dd>{currentOrder.delivery_location}</dd></div>
-              <div><dt>商品數量</dt><dd>{itemQuantity} 件</dd></div>
+              <div><dt><UserRound size={16} aria-hidden="true" /><span>姓名</span></dt><dd>{currentOrder.customer_name}</dd></div>
+              <div><dt><Phone size={16} aria-hidden="true" /><span>電話</span></dt><dd>{currentOrder.phone}</dd></div>
+              <div><dt><MapPin size={16} aria-hidden="true" /><span>交貨地點</span></dt><dd>{currentOrder.delivery_location}</dd></div>
+              <div><dt><Package size={16} aria-hidden="true" /><span>商品數量</span></dt><dd>{itemQuantity} 件</dd></div>
             </dl>
             {currentOrder.note ? <p className="admin-customer-note">顧客備註：{currentOrder.note}</p> : null}
           </section>
 
-          <section className="admin-drawer-section">
+          <section className="admin-drawer-section admin-items-section">
             <h3><Package size={17} />商品明細</h3>
             <div className="admin-drawer-items">
               {(currentOrder.order_items || []).map((item, index) => (
@@ -309,13 +347,13 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
           </section>
 
           <div className="admin-order-workbench">
-            <section className="admin-workflow-panel" aria-label="訂單流程">
-              <div className="admin-workflow-panel-head">
+            <details className="admin-workflow-panel" open={workflowOpen} onToggle={(event) => setWorkflowOpen(event.currentTarget.open)}>
+              <summary className="admin-workflow-panel-head">
                 <h3><Check size={17} />訂單流程</h3>
                 <span className={`admin-status-badge status-${currentOrder.status}`}>
                   {getAdminStatusLabel(currentOrder.status)}
                 </span>
-              </div>
+              </summary>
               <ol className="admin-workflow-steps">
                 {adminWorkflowStatusOrder.map((value, index) => {
                   const stepRank = adminStatusOrder.indexOf(value);
@@ -391,50 +429,55 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
                   </button>
                 </div>
               </details>
-            </section>
+            </details>
 
             <section className="admin-payment-panel" aria-label="付款紀錄">
-              <h3><CreditCard size={17} />付款紀錄</h3>
-              <div className="admin-payment-total"><span>訂單總額</span><strong>{formatCurrency(totalAmount)}</strong></div>
-              <div className="admin-payment-overview">
-                <div><span>應收訂金</span><strong>{formatCurrency(depositDue)}</strong></div>
-                <div><span>累計實收</span><strong>{formatCurrency(paidAmount)}</strong></div>
-                <div className="outstanding"><span>待收餘額</span><strong>{formatCurrency(outstandingAmount)}</strong></div>
-              </div>
-              {currentOrder.quoted_total_amount != null ? (
-                <div className="admin-price-adjustment-record">
-                  <span>原預估 {formatCurrency(currentOrder.quoted_total_amount)}</span>
-                  <ChevronRight size={14} aria-hidden="true" />
-                  <strong>實際 {formatCurrency(totalAmount)}</strong>
-                  <small>目前收益 {formatCurrency(Number(currentOrder.profit_amount || 0))}</small>
+              <div className="admin-payment-summary">
+                <h3><CreditCard size={17} />付款紀錄</h3>
+                <div className="admin-payment-total"><span>訂單總額</span><strong>{formatCurrency(totalAmount)}</strong></div>
+                <div className="admin-payment-overview">
+                  <div><span>應收訂金</span><strong>{formatCurrency(depositDue)}</strong></div>
+                  <div><span>累計實收</span><strong>{formatCurrency(paidAmount)}</strong></div>
+                  <div className="outstanding"><span>待收餘額</span><strong>{formatCurrency(outstandingAmount)}</strong></div>
                 </div>
-              ) : null}
-              {currentOrder.payment_review_required ? (
-                <div className="admin-review-notice">此為改版前訂單，請核對後儲存任一付款欄位完成補登。</div>
-              ) : null}
-              <PaymentEditor
-                label="訂金"
-                amount={depositAmount}
-                method={depositMethod}
-                paidAt={currentOrder.deposit_paid_at}
-                busy={busy === "deposit"}
-                actionLabel={currentOrder.status === "pending_deposit" ? "確認訂金並開始採買" : "儲存訂金"}
-                onAmountChange={setDepositAmount}
-                onMethodChange={setDepositMethod}
-                onSave={() => handlePaymentSave("deposit")}
-              />
-              <PaymentEditor
-                label="尾款"
-                amount={balanceAmount}
-                method={balanceMethod}
-                paidAt={currentOrder.balance_paid_at}
-                busy={busy === "balance"}
-                actionLabel={currentOrder.status === "ready_pickup" ? "確認尾款並完成訂單" : "儲存尾款"}
-                highlighted={currentOrder.status === "ready_pickup" && outstandingAmount > 0}
-                onAmountChange={setBalanceAmount}
-                onMethodChange={setBalanceMethod}
-                onSave={() => handlePaymentSave("balance")}
-              />
+                <p className="admin-payment-guidance"><span>下一步</span>{paymentGuidance}</p>
+                {currentOrder.quoted_total_amount != null ? (
+                  <div className="admin-price-adjustment-record">
+                    <span>原預估 {formatCurrency(currentOrder.quoted_total_amount)}</span>
+                    <ChevronRight size={14} aria-hidden="true" />
+                    <strong>實際 {formatCurrency(totalAmount)}</strong>
+                    <small>目前收益 {formatCurrency(Number(currentOrder.profit_amount || 0))}</small>
+                  </div>
+                ) : null}
+                {currentOrder.payment_review_required ? (
+                  <div className="admin-review-notice">此為改版前訂單，請核對後儲存任一付款欄位完成補登。</div>
+                ) : null}
+              </div>
+              <div className="admin-payment-editors">
+                <PaymentEditor
+                  label="訂金"
+                  amount={depositAmount}
+                  method={depositMethod}
+                  paidAt={currentOrder.deposit_paid_at}
+                  busy={busy === "deposit"}
+                  actionLabel={currentOrder.status === "pending_deposit" ? "確認訂金並開始採買" : "儲存訂金"}
+                  onAmountChange={setDepositAmount}
+                  onMethodChange={setDepositMethod}
+                  onSave={() => handlePaymentSave("deposit")}
+                />
+                <PaymentEditor
+                  label="尾款"
+                  amount={balanceAmount}
+                  method={balanceMethod}
+                  paidAt={currentOrder.balance_paid_at}
+                  busy={busy === "balance"}
+                  actionLabel={currentOrder.status === "ready_pickup" ? "確認尾款並完成訂單" : "儲存尾款"}
+                  highlighted={currentOrder.status === "ready_pickup" && outstandingAmount > 0}
+                  onAmountChange={setBalanceAmount}
+                  onMethodChange={setBalanceMethod}
+                  onSave={() => handlePaymentSave("balance")}
+                />
+              </div>
             </section>
           </div>
 
@@ -476,6 +519,14 @@ export default function AdminOrderDrawer({ order, deleting = false, onClose, onD
 
           <section className="admin-drawer-section admin-notification-section">
             <h3><Bell size={17} />LINE 通知</h3>
+            {currentOrder.status === "ready_pickup" && hasPriceAdjustment ? (
+              <div className="admin-mobile-price-adjustment-notice">
+                <p><strong>訂單金額已更正</strong><span>原預估 {formatCurrency(currentOrder.quoted_total_amount)}，目前 {formatCurrency(totalAmount)}</span></p>
+                <button type="button" className="admin-secondary-button" disabled={busy === "price-adjustment-notification"} onClick={handlePriceAdjustmentNotification}>
+                  <Bell size={15} />{busy === "price-adjustment-notification" ? "傳送中..." : "補傳金額更正通知"}
+                </button>
+              </div>
+            ) : null}
             <p className="admin-empty-text">通知佇列：{notificationQueueTotal} 筆</p>
             {notificationJobsError ? <p className="admin-notification-error">{notificationJobsError}</p> : null}
             {!notificationJobs.length ? <p className="admin-empty-text">尚無通知紀錄</p> : null}

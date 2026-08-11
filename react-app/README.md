@@ -82,6 +82,7 @@ window.APP_CONFIG = {
 - 手機版以 `max-width: 760px` 的樣式覆蓋層重排訂購頁、熱門商品、交貨點與會員選單；桌面版版型與三步驟引導不應被手機規則影響。
 - `OrderPage.jsx` 的桌面與手機主視覺可使用不同文字結構，但文案需保持一致。
 - `AdminOrderDrawer.jsx` 的刪除按鈕會呼叫 `adminService.deleteAdminOrder`。此操作不可復原，僅在取消訂單且不需保留紀錄時使用。
+- 手機版 `AdminOrderDrawer.jsx` 在待取貨且實際總額不同於原報價時，提供「補傳金額更正通知」。訂金確認、金額更正與交貨通知是三個獨立事件；相關前端、`line-notify` 與 `20260811010000_explicit_member_order_notifications.sql` 必須一起部署。
 - 刪除功能相依 `supabase/migrations/20260726000000_admin_delete_order.sql`；前端與 migration 必須一起部署。
 
 完整產品與部署規格在根目錄 [README.md](../README.md)。遠端 E2E 測試要求見 [scripts/e2e/README.md](scripts/e2e/README.md)。

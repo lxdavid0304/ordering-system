@@ -55,6 +55,7 @@ export default function HistoryOrderDetailDrawer({
   }
 
   const items = order.order_items || [];
+  const shippingAmount = Math.max(0, Number(order.shipping_amount) || 0);
   const selectedCount = selectedIndexes.length;
   const allSelected = Boolean(items.length) && selectedCount === items.length;
 
@@ -91,36 +92,38 @@ export default function HistoryOrderDetailDrawer({
           </button>
         </header>
 
-        <div className="member-order-drawer-status">
-          <StatusBadge kind={`member-${order.status}`}>
-            {getMemberOrderStatusLabel(order.status)}
-          </StatusBadge>
-          <span>完整訂單編號：{order.id}</span>
-        </div>
-
-        <section className="member-order-drawer-facts" aria-label="訂單摘要">
-          <div>
-            <MapPin size={17} aria-hidden="true" />
-            <span>交貨地點</span>
-            <strong>{order.delivery_location || "未指定"}</strong>
+        <div className="history-order-drawer-content">
+          <div className="member-order-drawer-status history-order-drawer-status">
+            <StatusBadge kind={`member-${order.status}`}>
+              {getMemberOrderStatusLabel(order.status)}
+            </StatusBadge>
+            <span className="history-order-drawer-full-id">完整訂單編號：{order.id}</span>
           </div>
-          <div>
-            <Package size={17} aria-hidden="true" />
-            <span>商品數量</span>
-            <strong>{getTotalQuantity(order)} 件</strong>
-          </div>
-        </section>
 
-        <section className="history-drawer-total" aria-label="訂單總額">
-          <span>訂單總額</span>
-          <strong>{formatCurrency(order.total_amount)}</strong>
-        </section>
+          <section className="member-order-drawer-facts history-order-drawer-facts" aria-label="訂單摘要">
+            <div>
+              <MapPin size={17} aria-hidden="true" />
+              <span>交貨地點</span>
+              <strong>{order.delivery_location || "未指定"}</strong>
+            </div>
+            <div>
+              <Package size={17} aria-hidden="true" />
+              <span>商品數量</span>
+              <strong>{getTotalQuantity(order)} 件</strong>
+            </div>
+          </section>
 
-        <section className="member-order-drawer-section">
-          <div className="history-drawer-section-head">
-            <h3><Package size={17} aria-hidden="true" />商品明細</h3>
-            {selecting ? <span>已選 {selectedCount} 項</span> : null}
-          </div>
+          <section className="history-drawer-total" aria-label="訂單總額">
+            <span>訂單總額</span>
+            <strong>{formatCurrency(order.total_amount)}</strong>
+            <small className="history-drawer-shipping">運費 {formatCurrency(shippingAmount)}</small>
+          </section>
+
+          <section className="member-order-drawer-section history-drawer-items-section">
+            <div className="history-drawer-section-head">
+              <h3><Package size={17} aria-hidden="true" />商品明細</h3>
+              {selecting ? <span>已選 {selectedCount} 項</span> : null}
+            </div>
 
           {selecting ? (
             <div className="history-drawer-selection-tools">
@@ -162,14 +165,15 @@ export default function HistoryOrderDetailDrawer({
               );
             })}
           </div>
-        </section>
-
-        {order.note ? (
-          <section className="member-order-drawer-section member-order-drawer-note">
-            <h3><FileText size={17} aria-hidden="true" />訂單備註</h3>
-            <p>{order.note}</p>
           </section>
-        ) : null}
+
+          {order.note ? (
+            <section className="member-order-drawer-section member-order-drawer-note history-order-drawer-note">
+              <h3><FileText size={17} aria-hidden="true" />訂單備註</h3>
+              <p>{order.note}</p>
+            </section>
+          ) : null}
+        </div>
 
         <footer className="history-drawer-footer">
           {selecting ? (

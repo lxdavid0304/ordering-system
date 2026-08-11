@@ -211,6 +211,8 @@ export default function AdminFlashFoodPage() {
   const [readyDraft, setReadyDraft] = useState(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [expandedPickupManifest, setExpandedPickupManifest] = useState({ campaignId: "", location: "" });
+  const [purchaseSummaryExpanded, setPurchaseSummaryExpanded] = useState(false);
+  const [mobilePickupPanel, setMobilePickupPanel] = useState("");
   const [activePanel, setActivePanel] = useState("manage");
   const [reportPeriod, setReportPeriod] = useState("month");
   const [operatingReport, setOperatingReport] = useState(emptyOperatingReport);
@@ -416,6 +418,7 @@ export default function AdminFlashFoodPage() {
       return;
     }
     setReadyDraft(null);
+    setMobilePickupPanel("");
     setMessage({ text: notificationError ? `已更新${readyDraft.pickupLocation}交貨時間；LINE 通知部分發送失敗，已保留在通知佇列。` : `已通知${readyDraft.pickupLocation}的下單會員前來取餐。`, type: "success" });
     await refreshCampaigns();
   }
@@ -434,6 +437,8 @@ export default function AdminFlashFoodPage() {
   function returnToCampaignList() {
     setSelectedCampaignId("");
     setExpandedPickupManifest({ campaignId: "", location: "" });
+    setPurchaseSummaryExpanded(false);
+    setMobilePickupPanel("");
     setEditDraft(null);
     setReadyDraft(null);
     setCancelDraft({ campaignId: "", reason: "" });
@@ -603,6 +608,8 @@ export default function AdminFlashFoodPage() {
                     onClick={() => {
                       setSelectedCampaignId(campaign.id);
                       setExpandedPickupManifest({ campaignId: "", location: "" });
+                      setPurchaseSummaryExpanded(false);
+                      setMobilePickupPanel("");
                     }}
                   >
                     <span className={`flash-state-badge ${state}`}>{getFlashFoodCampaignStateLabel(state)}</span>
@@ -631,8 +638,8 @@ export default function AdminFlashFoodPage() {
                   {state !== "open" && (purchaseTotals.length || (state === "locked" && activeOrders.length)) ? (
                     <section className="flash-fulfillment-workbench" aria-label="截止後採買與交貨作業">
                     {purchaseTotals.length ? (
-                    <section className="flash-purchase-summary" aria-label="截止後採買統計">
-                      <div className="flash-ops-heading"><span><ClipboardList size={16} aria-hidden="true" /> 截止後採買統計</span><small>{activeOrders.length} 筆已送出訂單</small></div>
+                    <section className={`flash-purchase-summary${purchaseSummaryExpanded ? " mobile-expanded" : " is-mobile-collapsed"}`} aria-label="截止後採買統計">
+                      <div className="flash-ops-heading"><span><ClipboardList size={16} aria-hidden="true" /> 截止後採買統計</span><small><span className="flash-desktop-purchase-count">{activeOrders.length} 筆已送出訂單</span><span className="flash-mobile-purchase-count">{purchaseTotals.length} 項 · {activeOrders.length} 筆訂單</span></small><button type="button" className="flash-mobile-section-toggle" aria-expanded={purchaseSummaryExpanded} onClick={() => setPurchaseSummaryExpanded((current) => !current)}>{purchaseSummaryExpanded ? "收合" : "展開"}<ChevronDown size={15} aria-hidden="true" /></button></div>
                       <ul>{purchaseTotals.map((item) => <li key={`${item.productName}-${item.itemNote}`}>
                         <span className="flash-purchase-item-copy">
                           <strong>{item.productName}</strong>
@@ -653,6 +660,7 @@ export default function AdminFlashFoodPage() {
                           return <button key={location} type="button" className={`flash-location-handoff-card${isSelected ? " selected" : ""}${notice ? " notified" : ""}`} disabled={!locationOrders.length} onClick={() => {
                             setEditDraft(null);
                             setCancelDraft({ campaignId: "", reason: "" });
+                            setMobilePickupPanel("");
                             setReadyDraft(createReadyDraft(campaign, location, notice));
                           }}>
                             <span>交貨地點</span><strong>{location}</strong><small>{locationOrders.length ? `${locationOrders.length} 筆訂單 · ${memberCount} 位會員` : "尚無下單會員"}</small>
@@ -661,7 +669,12 @@ export default function AdminFlashFoodPage() {
                         })}
                       </div>
                       <aside className="flash-location-handoff-panel">
-                        {activePickupGroup && readyDraft ? <form className="flash-location-notice-form" onSubmit={handleReadyNotification} noValidate>
+                        {activePickupGroup && readyDraft ? <>
+                          <div className="flash-mobile-location-actions">
+                            <div><strong>{activePickupGroup.location}</strong><small>{activePickupGroup.orders.length} 筆訂單 · {activePickupMemberCount} 位會員</small></div>
+                            <div><button type="button" className={mobilePickupPanel === "manifest" ? "active" : ""} aria-pressed={mobilePickupPanel === "manifest"} onClick={() => setMobilePickupPanel((current) => current === "manifest" ? "" : "manifest")}><ClipboardList size={15} aria-hidden="true" />{mobilePickupPanel === "manifest" ? "收合名單" : "查看名單"}</button><button type="button" className={mobilePickupPanel === "notice" ? "active" : ""} aria-pressed={mobilePickupPanel === "notice"} onClick={() => setMobilePickupPanel((current) => current === "notice" ? "" : "notice")}><BellRing size={15} aria-hidden="true" />{mobilePickupPanel === "notice" ? "收合通知" : "設定通知"}</button></div>
+                          </div>
+                          <form className={`flash-location-notice-form${mobilePickupPanel ? " mobile-expanded" : ""}`} data-mobile-view={mobilePickupPanel} onSubmit={handleReadyNotification} noValidate>
                           <section className="flash-location-order-list" aria-label={`${activePickupGroup.location}下單名單`}>
                             <div><strong>訂單資料</strong><small>{activePickupGroup.orders.length} 筆訂單 · {activePickupMemberCount} 位會員</small></div>
                             <ul>{activePickupGroup.orders.map((order) => <li key={order.id}>
@@ -673,9 +686,10 @@ export default function AdminFlashFoodPage() {
                           </section>
                           <div className="flash-location-notice-footer">
                             <LocationPickupSchedule draft={readyDraft} onChange={(changes) => setReadyDraft((current) => ({ ...current, ...changes }))} />
-                            <div className="flash-location-notice-actions"><button type="submit" className="admin-primary-button" disabled={saving} aria-label={pickupNoticesByLocation.get(activePickupGroup.location) ? `重新通知 ${activePickupMemberCount} 位會員` : `通知 ${activePickupMemberCount} 位會員`} title={pickupNoticesByLocation.get(activePickupGroup.location) ? `重新通知 ${activePickupMemberCount} 位會員` : `通知 ${activePickupMemberCount} 位會員`}><BellRing size={16} aria-hidden="true" /></button><button type="button" className="admin-secondary-button" onClick={() => setReadyDraft(null)} aria-label="取消交貨通知設定" title="取消交貨通知設定"><X size={16} aria-hidden="true" /></button></div>
+                            <div className="flash-location-notice-actions"><button type="submit" className="admin-primary-button" disabled={saving} aria-label={pickupNoticesByLocation.get(activePickupGroup.location) ? `重新通知 ${activePickupMemberCount} 位會員` : `通知 ${activePickupMemberCount} 位會員`} title={pickupNoticesByLocation.get(activePickupGroup.location) ? `重新通知 ${activePickupMemberCount} 位會員` : `通知 ${activePickupMemberCount} 位會員`}><BellRing size={16} aria-hidden="true" /><span className="flash-mobile-button-label">{pickupNoticesByLocation.get(activePickupGroup.location) ? "重新通知" : "發送通知"}</span></button><button type="button" className="admin-secondary-button" onClick={() => { setReadyDraft(null); setMobilePickupPanel(""); }} aria-label="取消交貨通知設定" title="取消交貨通知設定"><X size={16} aria-hidden="true" /><span className="flash-mobile-button-label">關閉</span></button></div>
                           </div>
-                        </form> : <div className="flash-location-handoff-empty"><MapPin size={19} aria-hidden="true" /><span>請先選擇一個交貨地點，即可查看該處下單者資料並設定交貨時間。</span></div>}
+                          </form>
+                        </> : <div className="flash-location-handoff-empty"><MapPin size={19} aria-hidden="true" /><span>請先選擇一個交貨地點，即可查看該處下單者資料並設定交貨時間。</span></div>}
                       </aside>
                     </div>
                   </section> : null}

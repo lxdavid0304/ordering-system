@@ -8,7 +8,9 @@ import {
   Download,
   Filter,
   MapPin,
+  Package,
   PackageCheck,
+  Phone,
   RefreshCw,
   Search,
   Send,
@@ -299,6 +301,13 @@ export default function AdminPage() {
     }
 
     const reason = batchNextStatus === "archived" ? "批次封存已完成訂單" : "批次推進訂單流程";
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    if (isMobile) {
+      const confirmed = window.confirm(
+        `確定將 ${selectedOrders.length} 筆訂單批次移至「${getAdminStatusLabel(batchNextStatus)}」嗎？`
+      );
+      if (!confirmed) return;
+    }
     setMessage({ text: "正在更新選取訂單...", type: "" });
     const { data, error } = await bulkUpdateOrders(selectedIds, batchNextStatus, reason);
     if (error) {
@@ -632,19 +641,31 @@ export default function AdminPage() {
         ) : null}
 
         {selectedIds.length ? (
-          <div className="admin-bulk-bar">
-            <strong>已選 {selectedIds.length} 筆</strong>
-            {batchNextStatus ? (
-              <>
-                <button type="button" className="admin-primary-button" onClick={handleBatchAdvance}>
-                  {batchNextStatus === "fulfilled" ? "確認尾款並批次完成" : `批次移至${getAdminStatusLabel(batchNextStatus)}`}
-                </button>
-              </>
-            ) : (
-              <span>所選訂單階段不同，請選擇相同狀態的訂單。</span>
-            )}
-            <button type="button" className="admin-text-button" onClick={() => setSelectedIds([])}>取消選取</button>
-          </div>
+          <>
+            <div className="admin-bulk-bar">
+              <strong>已選 {selectedIds.length} 筆</strong>
+              {batchNextStatus ? (
+                <>
+                  <button type="button" className="admin-primary-button" onClick={handleBatchAdvance}>
+                    {batchNextStatus === "fulfilled" ? "確認尾款並批次完成" : `批次移至${getAdminStatusLabel(batchNextStatus)}`}
+                  </button>
+                </>
+              ) : (
+                <span>所選訂單階段不同，請選擇相同狀態的訂單。</span>
+              )}
+              <button type="button" className="admin-text-button" onClick={() => setSelectedIds([])}>取消選取</button>
+            </div>
+            <button
+              type="button"
+              className="admin-mobile-bulk-action"
+              disabled={!batchNextStatus}
+              onClick={handleBatchAdvance}
+            >
+              <PackageCheck size={17} aria-hidden="true" />
+              <span>已選 {selectedIds.length} 筆</span>
+              <strong>{batchNextStatus === "fulfilled" ? "確認尾款" : batchNextStatus ? `移至${getAdminStatusLabel(batchNextStatus)}` : "請選相同狀態"}</strong>
+            </button>
+          </>
         ) : null}
 
         {message.text ? <div className={`admin-page-message ${message.type}`}>{message.text}</div> : null}
@@ -809,8 +830,9 @@ function PurchaseList({ items, orderCount, totalQuantity, loading, error, open, 
 }
 
 function AdminOrderRow({ order, selected, onSelect, onOpen }) {
-  const quantity = (order.order_items || []).reduce((sum, item) => sum + Math.max(1, Number(item.quantity) || 1), 0);
-  const shippingAmount = (order.order_items || []).reduce((sum, item) => {
+  const orderItems = order.order_items || [];
+  const quantity = orderItems.reduce((sum, item) => sum + Math.max(1, Number(item.quantity) || 1), 0);
+  const shippingAmount = orderItems.reduce((sum, item) => {
     const itemQuantity = Math.max(1, Number(item.quantity) || 1);
     const unitShipping = item.catalog_product_id
       ? Math.max(0, Number(item.shipping_fee_per_unit) || 0)
@@ -823,16 +845,31 @@ function AdminOrderRow({ order, selected, onSelect, onOpen }) {
       <label className="admin-row-check"><input type="checkbox" checked={selected} onChange={(event) => onSelect(event.target.checked)} aria-label={`選取訂單 ${order.id.slice(0, 8)}`} /></label>
       <button type="button" className="admin-order-row-main" onClick={onOpen}>
         <div className="admin-order-identity">
-          <strong>{order.customer_name}</strong>
-          <span>#{order.id.slice(0, 8)} · {order.fulfilled_at ? `完成 ${formatDateTime(order.fulfilled_at)}` : formatDateTime(order.created_at)}</span>
+          <span className="admin-order-id-meta">#{order.id.slice(0, 8)} · {order.fulfilled_at ? `完成 ${formatDateTime(order.fulfilled_at)}` : formatDateTime(order.created_at)}</span>
+          <strong className="admin-order-customer-name">{order.customer_name}</strong>
         </div>
-        <div className="admin-order-delivery"><strong>{order.delivery_location}</strong><span>{quantity} 件商品 · {order.phone}</span></div>
-        <div><span className={`admin-payment-badge payment-${paymentStatus}`}>{paymentStatusLabels[paymentStatus]}</span></div>
+        <div className="admin-order-mobile-contact">
+          <strong>{order.customer_name}</strong>
+          <span><Phone size={13} aria-hidden="true" />{order.phone || "未提供電話"}</span>
+        </div>
+        <div className="admin-order-delivery">
+          <strong className="admin-order-desktop-location"><MapPin size={13} aria-hidden="true" />{order.delivery_location}</strong>
+          <strong className="admin-order-mobile-phone"><Phone size={13} aria-hidden="true" />{order.phone || "未提供電話"}</strong>
+          <span className="admin-order-desktop-quantity"><Package size={13} aria-hidden="true" />{quantity} 件商品<span className="admin-order-desktop-phone"> · {order.phone}</span></span>
+          <div className="admin-order-mobile-fulfillment">
+            <span><MapPin size={13} aria-hidden="true" />{order.delivery_location || "未指定交貨地點"}</span>
+            <span><Package size={13} aria-hidden="true" />{quantity} 件商品</span>
+          </div>
+        </div>
+        <div className="admin-order-payment">
+          <span className={`admin-payment-badge payment-${paymentStatus}`}>{paymentStatusLabels[paymentStatus]}</span>
+          <span className="admin-mobile-order-detail">查看明細<ChevronRight size={16} aria-hidden="true" /></span>
+        </div>
         <div className="admin-row-total">
           <strong>{formatCurrency(order.total_amount)}</strong>
           <small>運費 {formatCurrency(shippingAmount)}</small>
         </div>
-        <div><span className={`admin-status-badge status-${order.status}`}>{getAdminStatusLabel(order.status)}</span></div>
+        <div className="admin-order-status"><span className={`admin-status-badge status-${order.status}`}>{getAdminStatusLabel(order.status)}</span></div>
         <ChevronRight size={18} className="admin-row-chevron" />
       </button>
     </article>

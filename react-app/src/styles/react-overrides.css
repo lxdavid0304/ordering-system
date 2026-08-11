@@ -842,6 +842,10 @@
 .flash-purchase-summary,
 .flash-pickup-manifest { margin-top: 14px; padding: 12px; border: 1px solid #d9e6ed; border-radius: 13px; background: linear-gradient(135deg, #f8fbfd, #f0f6fa); }
 .flash-purchase-summary { border-color: #ded5f0; background: linear-gradient(145deg, #faf8ff 0%, #f1edfb 100%); }
+.flash-mobile-section-toggle,
+.flash-mobile-location-actions,
+.flash-mobile-button-label,
+.flash-mobile-purchase-count { display: none; }
 .flash-fulfillment-workbench { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(0, 1.28fr); align-items: start; gap: 14px; margin-top: 14px; }
 .flash-fulfillment-workbench .flash-purchase-summary { position: sticky; top: 16px; margin-top: 0; }
 .flash-ops-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #174664; font-size: 13px; font-weight: 850; }
@@ -1159,10 +1163,48 @@
   .flash-schedule-editor { grid-template-columns: 1fr; }
   .flash-campaign-edit-form { grid-template-columns: 1fr; }
   .flash-campaign-edit-form .flash-campaign-edit-title { grid-column: auto; }
+  .flash-fulfillment-workbench { gap: 10px; margin-top: 10px; }
+  .flash-purchase-summary, .flash-location-handoff { padding: 11px; border-radius: 12px; }
+  .flash-ops-heading { gap: 7px; }
+  .flash-ops-heading small { margin-left: auto; font-size: 10px; }
+  .flash-desktop-purchase-count { display: none; }
+  .flash-mobile-purchase-count { display: inline; }
+  .flash-mobile-section-toggle { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; padding: 4px 6px; border: 0; background: transparent; color: #7055a8; font: inherit; font-size: 11px; font-weight: 850; cursor: pointer; }
+  .flash-purchase-summary.is-mobile-collapsed ul { display: none; }
+  .flash-purchase-summary.mobile-expanded .flash-mobile-section-toggle svg { transform: rotate(180deg); }
   .flash-purchase-summary ul, .flash-pickup-manifest-grid { grid-template-columns: 1fr; }
-  .flash-location-handoff-body { grid-template-columns: 1fr; }
-  .flash-location-handoff-list { grid-template-columns: 1fr; }
+  .flash-purchase-summary li { min-height: 0; padding: 8px 9px; }
+  .flash-purchase-summary li > b { min-height: 26px; font-size: 13px; }
+  .flash-location-handoff-body { grid-template-columns: 1fr; margin-top: 9px; }
+  .flash-location-handoff-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .flash-location-handoff-card { min-height: 72px; padding: 8px; }
+  .flash-location-handoff-card > span { font-size: 9px; }
+  .flash-location-handoff-card strong { font-size: 13px; }
+  .flash-location-handoff-card small { font-size: 10px; }
+  .flash-location-handoff-card em { top: 7px; right: 7px; padding: 2px 5px; font-size: 9px; }
+  .flash-location-handoff-panel { padding: 8px; border-style: solid; background: #fffdf9; }
+  .flash-location-handoff-empty { min-height: 48px; grid-template-columns: auto minmax(0, 1fr); align-content: center; justify-content: start; padding: 2px 4px; gap: 7px; text-align: left; }
+  .flash-location-handoff-empty svg { width: 16px; height: 16px; }
+  .flash-location-handoff-empty span { font-size: 11px; line-height: 1.45; }
+  .flash-mobile-location-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+  .flash-mobile-location-actions > div:first-child { display: grid; min-width: 0; gap: 1px; }
+  .flash-mobile-location-actions strong { overflow: hidden; color: #244a62; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .flash-mobile-location-actions small { color: #778d9b; font-size: 10px; }
+  .flash-mobile-location-actions > div:last-child { display: flex; gap: 5px; }
+  .flash-mobile-location-actions button { display: inline-flex; align-items: center; gap: 3px; min-height: 30px; padding: 6px 7px; border: 1px solid #d7e3ea; border-radius: 8px; background: #fff; color: #42667e; font: inherit; font-size: 10px; font-weight: 850; cursor: pointer; }
+  .flash-mobile-location-actions button.active { border-color: #d87c58; background: #fff4ed; color: #a65035; }
+  .flash-location-notice-form:not(.mobile-expanded) { display: none; }
+  .flash-location-notice-form.mobile-expanded { grid-template-columns: 1fr; margin-top: 9px; }
+  .flash-location-notice-form[data-mobile-view="manifest"] .flash-location-message,
+  .flash-location-notice-form[data-mobile-view="manifest"] .flash-location-notice-footer { display: none; }
+  .flash-location-notice-form[data-mobile-view="notice"] .flash-location-order-list { gap: 0; padding: 0; border: 0; background: transparent; }
+  .flash-location-notice-form[data-mobile-view="notice"] .flash-location-order-list > div,
+  .flash-location-notice-form[data-mobile-view="notice"] .flash-location-order-list ul { display: none; }
   .flash-location-order-list li { grid-template-columns: 1fr; gap: 3px; }
+  .flash-location-notice-footer { gap: 7px; padding: 9px; }
+  .flash-location-notice-actions { grid-row: auto; justify-content: stretch; }
+  .flash-location-notice-actions .admin-primary-button, .flash-location-notice-actions .admin-secondary-button { display: inline-flex; width: auto; flex: 1 1 0; align-items: center; justify-content: center; gap: 5px; }
+  .flash-mobile-button-label { display: inline; }
   .flash-field-wide { grid-column: auto; }
   .flash-menu-editor-head, .flash-menu-option { align-items: start; }
   .flash-menu-editor-head { flex-direction: column; gap: 5px; }

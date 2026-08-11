@@ -69,18 +69,33 @@ async function createOrder({ url, anonKey, memberToken, suffix, unitPrice, payme
   return body;
 }
 
-async function verifyQueuedStatus(service, orderId, status) {
+async function verifyNoInitialNotification(service, orderId) {
   const jobs = unwrap(
     await service
       .from("line_notification_jobs")
-      .select("payload")
+      .select("id")
       .eq("order_id", orderId),
     "讀取 LINE 通知佇列"
   );
-  assert(
-    jobs.some((job) => job.payload?.to_status === status),
-    `LINE 通知佇列未包含狀態 ${status}`
+  assert(jobs.length === 0, "新訂單不應建立初始或狀態通知 job");
+}
+
+async function requestMemberNotification(adminClient, orderId, notificationType) {
+  const { error } = await adminClient.functions.invoke("line-notify", {
+    body: { order_id: orderId, notification_type: notificationType },
+  });
+  if (error) throw new Error(`建立 ${notificationType} 通知：${error.message}`);
+}
+
+async function verifyNotificationEvent(service, orderId, eventType) {
+  const jobs = unwrap(
+    await service
+      .from("line_notification_jobs")
+      .select("event_type, status")
+      .eq("order_id", orderId),
+    "讀取 LINE 通知佇列"
   );
+  assert(jobs.some((job) => job.event_type === eventType), `LINE 通知佇列未包含 ${eventType}`);
 }
 
 async function verifyNotificationWorker(adminClient, service, orderId) {
@@ -107,18 +122,6 @@ async function loadOrder(service, orderId) {
       .eq("id", orderId)
       .single(),
     "讀取測試訂單"
-  );
-}
-
-async function advanceStatus(adminClient, orderId, status) {
-  return unwrap(
-    await adminClient.rpc("admin_update_order", {
-      p_order_id: orderId,
-      p_status: status,
-      p_admin_note: "E2E flow verification",
-      p_reason: null,
-    }),
-    `更新訂單為 ${status}`
   );
 }
 
@@ -198,29 +201,30 @@ export async function runOrderFlow({ label, unitPrice, finalTotal, expectedIniti
 
     let order = await loadOrder(service, created.order_id);
     assert(order.selected_payment_method === paymentMethod, `${label}：付款方式未儲存`);
-    await verifyQueuedStatus(service, order.id, expectedInitialStatus);
+    await verifyNoInitialNotification(service, order.id);
 
     if (expectedInitialStatus === "pending_deposit") {
       const deposit = Math.ceil(total * 0.5);
       const afterDeposit = await savePayment(adminClient, order.id, "deposit", deposit);
       assert(afterDeposit.status === "open", `${label}：收到訂金後應進入採買進行中`);
-      await verifyQueuedStatus(service, order.id, "open");
+      await requestMemberNotification(adminClient, order.id, "deposit_confirmed");
+      await verifyNotificationEvent(service, order.id, "deposit_confirmed");
       order = await loadOrder(service, order.id);
       assert(order.deposit_paid_amount === deposit, `${label}：訂金金額未正確儲存`);
     }
 
     const ready = await markReadyForPickup(adminClient, order.id, finalTotal);
     assert(ready.status === "ready_pickup", `${label}：商品買好後應進入待取貨`);
-    await verifyQueuedStatus(service, order.id, "ready_pickup");
 
     order = await loadOrder(service, order.id);
     assert(order.total_amount === finalTotal, `${label}：實際總額未正確儲存`);
     assert(order.quoted_total_amount === total, `${label}：原預估總額未正確保留`);
     assert(order.profit_amount === 20 + finalTotal - total, `${label}：運費收益未依金額調整`);
+    await requestMemberNotification(adminClient, order.id, "price_adjusted");
+    await verifyNotificationEvent(service, order.id, "price_adjusted");
     const balance = order.total_amount - order.deposit_paid_amount;
     const completed = await savePayment(adminClient, order.id, "balance", balance);
     assert(completed.status === "fulfilled", `${label}：收齊款項後應自動完成`);
-    await verifyQueuedStatus(service, order.id, "fulfilled");
 
     order = await loadOrder(service, order.id);
     assert(order.balance_paid_amount === balance, `${label}：尾款金額未正確儲存`);

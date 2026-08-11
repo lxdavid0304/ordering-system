@@ -60,7 +60,7 @@ export async function loadMemberOrders(userId) {
 
   return memberSupabase
     .from("orders")
-    .select("id, created_at, delivery_location, note, total_amount, status, selected_payment_method, deposit_paid_amount, balance_paid_amount, order_items(*)")
+    .select("id, created_at, delivery_location, note, total_amount, shipping_amount, status, selected_payment_method, deposit_paid_amount, balance_paid_amount, order_items(*)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 }
