@@ -37,14 +37,10 @@ function Draw-CartIcon($graphics, $pen, $brush, [single]$centerX, [single]$cente
   $graphics.FillEllipse($brush, $centerX + 120, $centerY + 145, 52, 52)
 }
 
-function Draw-ProductIcon($graphics, $pen, [single]$centerX, [single]$centerY) {
-  $graphics.DrawRectangle($pen, $centerX - 155, $centerY - 90, 310, 215)
-  $graphics.DrawLine($pen, $centerX - 155, $centerY - 25, $centerX + 155, $centerY - 25)
-  $graphics.DrawLine($pen, $centerX, $centerY - 90, $centerX, $centerY + 125)
-  $graphics.DrawLine($pen, $centerX - 185, $centerY - 90, $centerX + 185, $centerY - 90)
-  $graphics.DrawLine($pen, $centerX - 125, $centerY - 140, $centerX + 125, $centerY - 140)
-  $graphics.DrawLine($pen, $centerX - 125, $centerY - 140, $centerX - 155, $centerY - 90)
-  $graphics.DrawLine($pen, $centerX + 125, $centerY - 140, $centerX + 155, $centerY - 90)
+function Draw-MemberIcon($graphics, $pen, [single]$centerX, [single]$centerY) {
+  $graphics.DrawEllipse($pen, $centerX - 72, $centerY - 160, 144, 144)
+  $graphics.DrawArc($pen, $centerX - 190, $centerY - 30, 380, 260, 200, 140)
+  $graphics.DrawLine($pen, $centerX - 185, $centerY + 125, $centerX + 185, $centerY + 125)
 }
 
 $bitmap = [System.Drawing.Bitmap]::new($width, $height)
@@ -89,9 +85,9 @@ Draw-CenteredText $graphics "i" $symbolFont $inkBrush 416 1120
 Draw-CenteredText $graphics (New-Text @(0x53D6, 0x8CA8, 0x8207, 0x4ED8, 0x6B3E)) $titleFont $inkBrush 416 1400
 Draw-CenteredText $graphics (New-Text @(0x6D41, 0x7A0B, 0x8207, 0x6CE8, 0x610F, 0x4E8B, 0x9805)) $smallFont $inkBrush 416 1510
 
-Draw-ProductIcon $graphics $whitePen 1250 1115
-Draw-CenteredText $graphics (New-Text @(0x71B1, 0x9580, 0x5546, 0x54C1)) $titleFont $whiteBrush 1250 1400
-Draw-CenteredText $graphics (New-Text @(0x958B, 0x5718, 0x4E2D, 0x5546, 0x54C1)) $smallFont $whiteBrush 1250 1510
+Draw-MemberIcon $graphics $whitePen 1250 1115
+Draw-CenteredText $graphics (New-Text @(0x52A0, 0x5165, 0x6703, 0x54E1)) $titleFont $whiteBrush 1250 1400
+Draw-CenteredText $graphics "LINE Login" $smallFont $whiteBrush 1250 1510
 
 Draw-CenteredText $graphics (New-Text @(0x2668)) $symbolFont $mutedBrush 2083 1120
 Draw-CenteredText $graphics (New-Text @(0x5FEB, 0x9583, 0x71B1, 0x98DF)) $titleFont $inkBrush 2083 1400

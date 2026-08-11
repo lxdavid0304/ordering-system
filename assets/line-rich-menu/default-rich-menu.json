@@ -19,8 +19,8 @@
       "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
       "action": {
         "type": "uri",
-        "label": "熱門商品與開團中商品",
-        "uri": "https://stalwart-axolotl-945b6e.netlify.app/popular"
+        "label": "加入會員（LINE 登入）",
+        "uri": "https://stalwart-axolotl-945b6e.netlify.app/line-member"
       }
     },
     {
