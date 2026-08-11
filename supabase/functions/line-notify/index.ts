@@ -14,6 +14,12 @@ const MAX_DELIVERY_ATTEMPTS = 8;
 const STALE_PROCESSING_MS = 30 * 1000;
 const RETRY_DELAYS_MS = [15 * 1000, 30 * 1000, 60 * 1000, 2 * 60 * 1000, 5 * 60 * 1000];
 const requestedNotificationTypes = new Set(["deposit_confirmed", "price_adjusted"]);
+const deliverableNotificationTypes = [
+  "order_created",
+  "deposit_confirmed",
+  "price_adjusted",
+  "delivery_location_ready",
+];
 const deliveryLocations = new Set(["明德樓", "據德樓", "蘊德樓", "機車停車場"]);
 const activeDeliveryStatuses = ["ready_pickup"];
 const DELIVERY_NOTIFICATION_LIMIT = 50;
@@ -64,6 +70,26 @@ function retryAt(attempts: number) {
 
 function readPayload(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function formatOrderStatus(value: unknown) {
+  const status = String(value || "");
+  if (status === "pending_deposit") return "待確認訂金";
+  if (status === "open") return "採買進行中";
+  return "訂單處理中";
+}
+
+function formatOrderItems(value: unknown) {
+  if (!Array.isArray(value)) return "商品明細請見訂單";
+  const items = value
+    .map((item) => {
+      const record = readPayload(item);
+      const productName = String(record.product_name || "").trim();
+      const quantity = Math.max(1, Math.floor(Number(record.quantity || 0)));
+      return productName ? `${productName} × ${quantity}` : "";
+    })
+    .filter(Boolean);
+  return items.length ? items.join("、") : "商品明細請見訂單";
 }
 
 async function ensureRequestedOrderNotificationJob(
@@ -362,7 +388,7 @@ serve(async (request) => {
         : "id, order_id, user_id, event_type, delivery_notification_batch_id, attempts, payload, status, created_at"
     )
     .in("status", ["pending", "failed"])
-    .in("event_type", ["deposit_confirmed", "price_adjusted", "delivery_location_ready"])
+    .in("event_type", deliverableNotificationTypes)
     .order("created_at", { ascending: true });
   if (requestedOrderId) jobsQuery = jobsQuery.eq("order_id", requestedOrderId);
   if (deliveryNotificationBatchId) {
@@ -450,7 +476,16 @@ serve(async (request) => {
     }
 
     const notificationPayload = readPayload(job.payload);
-    const text = job.event_type === "delivery_location_ready"
+    const text = job.event_type === "order_created"
+      ? [
+        "【代購訂單狀態更新】",
+        `訂單 #${String(job.order_id).slice(0, 8)}`,
+        `目前狀態：${formatOrderStatus(notificationPayload.target_status)}`,
+        `商品：${formatOrderItems(notificationPayload.items)}`,
+        `交貨地點：${String(notificationPayload.delivery_location || "未指定")}`,
+        `訂單金額：${formatCurrency(toAmount(notificationPayload.total_amount))} 元`,
+      ].join("\n")
+      : job.event_type === "delivery_location_ready"
       ? [
         "【交貨通知】",
         `交貨地點：${String(deliveryBatch?.delivery_location || "未指定")}`,

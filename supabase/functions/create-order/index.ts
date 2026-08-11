@@ -66,6 +66,11 @@ type CatalogProduct = {
   is_active: boolean;
 };
 
+type OrderNotificationItem = {
+  product_name: string;
+  quantity: number;
+};
+
 function mapCatalogProduct(product: CatalogProduct) {
   const displayName = [product.product_name, product.specification].filter(Boolean).join(" ");
   return {
@@ -78,6 +83,68 @@ function mapCatalogProduct(product: CatalogProduct) {
     shipping_fee_per_unit: product.shipping_fee_per_unit,
     display_name: displayName,
   };
+}
+
+function isInitialOrderStatus(status: unknown) {
+  return status === "pending_deposit" || status === "open";
+}
+
+async function queueInitialOrderNotification(
+  supabase: ReturnType<typeof createClient>,
+  order: {
+    id: string;
+    user_id: string;
+    status: string;
+    total_amount: number;
+    delivery_location: string;
+    items: OrderNotificationItem[];
+  }
+) {
+  const { data: existingJob, error: existingJobError } = await supabase
+    .from("line_notification_jobs")
+    .select("id")
+    .eq("order_id", order.id)
+    .eq("event_type", "order_created")
+    .limit(1)
+    .maybeSingle();
+  if (existingJobError) return existingJobError.message || "Notification queue is unavailable";
+  if (existingJob) return null;
+
+  const { error: insertError } = await supabase.from("line_notification_jobs").insert({
+    order_id: order.id,
+    user_id: order.user_id,
+    event_type: "order_created",
+    payload: {
+      target_status: order.status,
+      total_amount: order.total_amount,
+      delivery_location: order.delivery_location,
+      items: order.items,
+    },
+  });
+  // Idempotent retries can race after the database's one-per-order index has
+  // been added. The already-queued job is the desired result in that case.
+  if (insertError && !/duplicate key|unique/i.test(insertError.message || "")) {
+    return insertError.message || "Notification queue is unavailable";
+  }
+  return null;
+}
+
+async function dispatchQueuedNotifications(supabaseUrl: string, serviceKey: string, orderId: string) {
+  try {
+    await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/line-notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+      },
+      body: JSON.stringify({ order_id: orderId }),
+      signal: AbortSignal.timeout(3500),
+    });
+  } catch (error) {
+    // The job remains in the durable outbox and can be retried by the worker.
+    console.error("Initial LINE notification dispatch failed", error);
+  }
 }
 
 function getDatePartsInTimeZone(timeZone: string) {
@@ -363,7 +430,7 @@ serve(async (req) => {
   const { data: savedOrder, error: savedOrderError } = await supabase
     .from("orders")
     .select(
-      "id, total_amount, shipping_amount, status, order_items(product_name, unit_price, quantity, line_total, catalog_product_id, shipping_fee_per_unit)"
+      "id, user_id, delivery_location, total_amount, shipping_amount, status, order_items(product_name, unit_price, quantity, line_total, catalog_product_id, shipping_fee_per_unit)"
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -384,22 +451,38 @@ serve(async (req) => {
     return jsonResponse({ error: "Order created but payment method could not be saved" }, 500);
   }
 
-  // A new order is not a member-facing notification event. The first
-  // notification is queued only after an administrator confirms the deposit.
-
   const acceptedItems = Array.isArray(savedOrder.order_items) ? savedOrder.order_items : [];
   const itemsTotal = acceptedItems.reduce(
     (sum, item) => sum + Number(item.line_total || 0),
     0
   );
   const shippingAmount = Number(savedOrder.shipping_amount || 0);
+  const totalAmount = Number(savedOrder.total_amount || 0);
+
+  if (isInitialOrderStatus(savedOrder.status) && savedOrder.user_id) {
+    const notificationError = await queueInitialOrderNotification(supabase, {
+      id: savedOrder.id,
+      user_id: savedOrder.user_id,
+      status: savedOrder.status,
+      total_amount: totalAmount,
+      delivery_location: String(savedOrder.delivery_location || deliveryLocation),
+      items: acceptedItems.map((item) => ({
+        product_name: String(item.product_name || "商品"),
+        quantity: Math.max(1, Math.floor(Number(item.quantity || 0))),
+      })),
+    });
+    if (notificationError) {
+      return jsonResponse({ error: "Order created but notification could not be queued" }, 500);
+    }
+    await dispatchQueuedNotifications(supabaseUrl, serviceKey, savedOrder.id);
+  }
 
   return jsonResponse(
     {
       order_id: savedOrder.id,
       items_total: itemsTotal,
       shipping_amount: shippingAmount,
-      total_amount: Number(savedOrder.total_amount || 0),
+      total_amount: totalAmount,
       status: savedOrder.status,
       order_items: acceptedItems,
     },

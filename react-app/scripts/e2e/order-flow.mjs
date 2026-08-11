@@ -69,15 +69,20 @@ async function createOrder({ url, anonKey, memberToken, suffix, unitPrice, payme
   return body;
 }
 
-async function verifyNoInitialNotification(service, orderId) {
+async function verifyInitialNotification(service, orderId, expectedStatus) {
   const jobs = unwrap(
     await service
       .from("line_notification_jobs")
-      .select("id")
+      .select("event_type, payload")
       .eq("order_id", orderId),
     "讀取 LINE 通知佇列"
   );
-  assert(jobs.length === 0, "新訂單不應建立初始或狀態通知 job");
+  const initialJobs = jobs.filter((job) => job.event_type === "order_created");
+  assert(initialJobs.length === 1, "新訂單應只建立一筆下單完成通知 job");
+  assert(
+    initialJobs[0].payload?.target_status === expectedStatus,
+    "下單完成通知應保存建立當下的訂單狀態"
+  );
 }
 
 async function requestMemberNotification(adminClient, orderId, notificationType) {
@@ -201,7 +206,7 @@ export async function runOrderFlow({ label, unitPrice, finalTotal, expectedIniti
 
     let order = await loadOrder(service, created.order_id);
     assert(order.selected_payment_method === paymentMethod, `${label}：付款方式未儲存`);
-    await verifyNoInitialNotification(service, order.id);
+    await verifyInitialNotification(service, order.id, expectedInitialStatus);
 
     if (expectedInitialStatus === "pending_deposit") {
       const deposit = Math.ceil(total * 0.5);
